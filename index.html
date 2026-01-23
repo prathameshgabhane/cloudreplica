@@ -1,64 +1,49 @@
+
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Cloud VM Comparison</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <title>Cloud VM Comparison</title>
+  <link rel="stylesheet" href="style.css?v=20260123-1">
 </head>
 <body>
 
 <h2>Cloud VM Comparison Tool (AWS vs Azure)</h2>
 
 <div class="filters">
-    <label>Region:</label>
-    <select id="region">
-        <option value="ap-south-1">AWS Mumbai / Azure Central India</option>
-        <option value="us-east-1">AWS N. Virginia / Azure East US</option>
-    </select>
+  <label>Region:</label>
+  <select id="region"></select>
 
-    <label>OS:</label>
-    <select id="os">
-        <option value="Linux">Linux</option>
-        <option value="Windows">Windows</option>
-    </select>
+  <label>OS:</label>
+  <select id="os"></select>
 
-    <label>vCPU:</label>
-    <select id="cpu">
-        <option>1</option>
-        <option>2</option>
-        <option>4</option>
-        <option>8</option>
-    </select>
+  <label>vCPU:</label>
+  <select id="cpu"></select>
 
-    <label>RAM (GB):</label>
-    <select id="ram">
-        <option>1</option>
-        <option>2</option>
-        <option>4</option>
-        <option>8</option>
-        <option>16</option>
-    </select>
+  <label>RAM (GB):</label>
+  <select id="ram"></select>
 
-    <button onclick="compare()">Compare</button>
+  <button onclick="compare()">Compare</button>
 </div>
 
 <div class="results">
-    <div class="panel">
-        <h3>AWS EC2</h3>
-        <p id="awsInstance">Instance: -</p>
-        <p id="awsCpu">vCPU: -</p>
-        <p id="awsRam">RAM: -</p>
-        <p id="awsPrice">Price/hr: -</p>
-    </div>
+  <div class="panel">
+    <h3>AWS EC2</h3>
+    <p id="awsInstance">Instance: -</p>
+    <p id="awsCpu">vCPU: -</p>
+    <p id="awsRam">RAM: -</p>
+    <p id="awsPrice">Price/hr: -</p>
+  </div>
 
-    <div class="panel">
-        <h3>Azure VM</h3>
-        <p id="azInstance">VM Size: -</p>
-        <p id="azCpu">vCPU: -</p>
-        <p id="azRam">RAM: -</p>
-        <p id="azPrice">Price/hr: -</p>
-    </div>
+  <div class="panel">
+    <h3>Azure VM</h3>
+    <p id="azInstance">VM Size: -</p>
+    <p id="azCpu">vCPU: -</p>
+    <p id="azRam">RAM: -</p>
+    <p id="azPrice">Price/hr: -</p>
+  </div>
 </div>
 
-<script src="script.js"></script>
+<script src="script.js?v=20260123-1"></script>
 </body>
 </html>
