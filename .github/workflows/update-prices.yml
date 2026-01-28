@@ -1,13 +1,12 @@
 name: Update Cloud Prices
 
-# ⬇️ Give the workflow's GITHUB_TOKEN write access to repo contents (required to push)
 permissions:
   contents: write
 
 on:
   schedule:
-    - cron: "0 */6 * * *"    # Every 6 hours
-  workflow_dispatch:         # Allow manual run
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 jobs:
   update:
@@ -33,4 +32,3 @@ jobs:
         with:
           commit_message: "Auto-update cloud prices"
           file_pattern: data/prices.json
-``
