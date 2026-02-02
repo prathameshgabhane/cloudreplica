@@ -8082,13 +8082,6 @@
     },
     {
       "instance": "Standard_D16_v3",
-      "pricePerHourUSD": 0.301101,
-      "region": "eastus",
-      "vcpu": null,
-      "ram": null
-    },
-    {
-      "instance": "Standard_D16_v3",
       "pricePerHourUSD": 0.277939,
       "region": "eastus",
       "vcpu": null,
@@ -10792,13 +10785,6 @@
     {
       "instance": "Standard_D64nls_v6",
       "pricePerHourUSD": 0.748,
-      "region": "eastus",
-      "vcpu": null,
-      "ram": null
-    },
-    {
-      "instance": "Standard_DS13-2_v2",
-      "pricePerHourUSD": 0.19059,
       "region": "eastus",
       "vcpu": null,
       "ram": null
@@ -14131,6 +14117,20 @@
     {
       "instance": "Standard_EC64ads_v5",
       "pricePerHourUSD": 0.774682,
+      "region": "eastus",
+      "vcpu": null,
+      "ram": null
+    },
+    {
+      "instance": "Standard_FX24ms_v2",
+      "pricePerHourUSD": 0.694848,
+      "region": "eastus",
+      "vcpu": null,
+      "ram": null
+    },
+    {
+      "instance": "Standard_H16",
+      "pricePerHourUSD": 3.508,
       "region": "eastus",
       "vcpu": null,
       "ram": null
