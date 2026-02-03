@@ -1,6 +1,7 @@
 // scripts/fetch-prices.js (CommonJS)
 // Purpose: Build a compact prices.json with correct AWS On-Demand hourly rates,
-// Azure Retail compute prices, and Managed Disk storage pricing (no creds, no backend).
+// Azure Retail compute prices, and Managed Disk storage pricing (no creds, no backend),
+// narrowed to main families only and tagged by OS.
 
 const fetch = require("node-fetch");
 const fs = require("fs");
@@ -21,13 +22,35 @@ const AZURE_REGION = process.env.AZURE_REGION || "eastus";     // e.g., "central
    Helpers for AWS price parsing
    ============================== */
 
-// Returns true if a product's attributes look like standard On-Demand, Linux, shared tenancy, used capacity
-function isLinuxSharedUsed(attrs) {
-  const os  = String(attrs.operatingSystem || "").toLowerCase();
+// Returns true if a product's attributes look like standard On-Demand, shared tenancy, used capacity
+function isSharedUsed(attrs) {
   const ten = String(attrs.tenancy         || "").toLowerCase();
   const pre = String(attrs.preInstalledSw  || "").toLowerCase();
   const cap = String(attrs.capacitystatus  || "").toLowerCase();
-  return os === "linux" && ten === "shared" && pre === "na" && cap === "used";
+  return ten === "shared" && pre === "na" && cap === "used";
+}
+
+// True for AWS Linux (free Linux family) On-Demand
+function isAwsLinux(attrs) {
+  return String(attrs.operatingSystem || "").toLowerCase() === "linux" && isSharedUsed(attrs);
+}
+
+// True for AWS Windows Server On-Demand
+function isAwsWindows(attrs) {
+  return String(attrs.operatingSystem || "").toLowerCase() === "windows" && isSharedUsed(attrs);
+}
+
+// --- AWS family/category detection (m5.large -> 'm')
+function awsFamilyFromInstanceType(instanceType) {
+  if (!instanceType || typeof instanceType !== "string") return null;
+  const m = instanceType.match(/^([a-z]+)/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Keep only General purpose (m,t), Compute optimized (c), Memory optimized (r,x,z)
+function isWantedAwsFamily(instanceType) {
+  const fam = awsFamilyFromInstanceType(instanceType);
+  return fam === "m" || fam === "t" || fam === "c" || fam === "r" || fam === "x" || fam === "z";
 }
 
 // From a single SKU's OnDemand term set, pick the correct *hourly* instance price
@@ -73,11 +96,13 @@ async function fetchAwsCompute(region = "us-east-1") {
     const instance = attrs.instanceType;
     if (!instance) continue;
 
-    // Only standard On-Demand Linux, shared tenancy, used capacity
-    if (!isLinuxSharedUsed(attrs)) continue;
+    // NEW: main families only (general m/t, compute c, memory r/x/z)
+    if (!isWantedAwsFamily(instance)) continue;
 
-    // OPTIONAL: filter out unwanted families to reduce size
-    // if (!AWS_FAMILY_WHITELIST.test(instance)) continue;
+    // Keep only Linux/Windows On-Demand (shared tenancy, no preinstalled SW)
+    const isLinuxRow   = isAwsLinux(attrs);
+    const isWindowsRow = isAwsWindows(attrs);
+    if (!isLinuxRow && !isWindowsRow) continue;
 
     // Extract vCPU and RAM (GiB)
     const vcpu = Number(attrs.vcpu || 0);
@@ -88,14 +113,21 @@ async function fetchAwsCompute(region = "us-east-1") {
     const price = pickHourlyUsd(onDemandTerms);
     if (price == null || price === 0) continue;
 
-    rows.push({ instance, vcpu, ram, pricePerHourUSD: price, region });
+    rows.push({
+      instance,
+      vcpu,
+      ram,
+      pricePerHourUSD: price,
+      region,
+      os: isLinuxRow ? "Linux" : "Windows"
+    });
   }
 
   // OPTIONAL: cap per family to keep file smaller
   /*
   const grouped = {};
   for (const row of rows) {
-    const fam = row.instance.split(".")[0]; // e.g., m5.large -> m5
+    const fam = awsFamilyFromInstanceType(row.instance);
     grouped[fam] = grouped[fam] || [];
     grouped[fam].push(row);
   }
@@ -116,12 +148,40 @@ async function fetchAwsCompute(region = "us-east-1") {
    Azure Retail Prices API (public)
    ==================================== */
 
+// --- Azure family/category detection from armSkuName/productName
+function azureCategoryFromSkuOrProduct(armSkuName, productName) {
+  const n1 = String(armSkuName || "").toLowerCase();
+  const n2 = String(productName || "").toLowerCase();
+
+  // Try from armSkuName: "Standard_D4s_v3", "Standard_F8s_v2", "Standard_E16as_v5", "Standard_M64"
+  let fam = null;
+  const m1 = n1.match(/standard_([a-z]+)/); // captures "d", "f", "e", "m", "b", etc.
+  if (m1) fam = m1[1];
+  else {
+    // Fallback: productName like "Dv5-series", "Bsv2-series", "DCasv5-series Linux"
+    const m2 = n2.match(/\b([a-z]+)[0-9]*-?series/);
+    if (m2) fam = m2[1];
+  }
+  if (!fam) return null;
+
+  const first = fam[0];
+  // General purpose → D, B
+  if (first === "d" || first === "b") return "general";
+  // Compute optimized → F
+  if (first === "f") return "compute";
+  // Memory optimized → E, M
+  if (first === "e" || first === "m") return "memory";
+
+  return null;
+}
+
 /**
  * Fetch Azure VM retail prices for compute.
  * - api-version=2023-01-01-preview (case-sensitive filter values)
  * - URL-encoded $filter
  * - No $top (API uses NextPageLink/$skip for paging)
  * - Field is 'type' ('Consumption'), not 'priceType'
+ * - NEW: keep only main families (D/B, F, E/M) and tag OS
  */
 async function fetchAzureCompute(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
@@ -136,20 +196,33 @@ async function fetchAzureCompute(region = "eastus") {
       throw new Error(`Azure VM pricing (${region}) HTTP ${resp.status} – ${body?.slice(0,300) || 'no response body'}`);
     }
     const page = await resp.json();
-    const items = page.Items || [];
-    for (const x of items) {
+
+    for (const x of (page.Items || [])) {
+      const unit = x.unitPrice ?? x.retailPrice ?? null;
+      if (unit == null) continue;
+
+      // OS tag from productName
+      const pName = String(x.productName || "").toLowerCase();
+      const os = pName.includes("linux") ? "Linux" :
+                 pName.includes("windows") ? "Windows" : "Unknown";
+
+      // NEW: category filter from armSkuName/productName
+      const cat = azureCategoryFromSkuOrProduct(x.armSkuName, x.productName);
+      if (cat !== "general" && cat !== "compute" && cat !== "memory") continue;
+
       all.push({
         instance: x.armSkuName || x.skuName || x.meterName || "Unknown",
-        pricePerHourUSD: x.unitPrice ?? x.retailPrice ?? null,
+        pricePerHourUSD: unit,
         region,
+        os,
         vcpu: null,
         ram: null
       });
     }
-    next = page.NextPageLink || null; // API returns full URL for next page
+    next = page.NextPageLink || null;
   }
 
-  // Optional fallback (broaden filter and filter region client-side)
+  // Optional fallback (broaden server filter and filter region client-side)
   if (all.length === 0) {
     const fbFilter = `serviceName eq 'Virtual Machines' and type eq 'Consumption'`;
     let url = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(fbFilter)}`;
@@ -160,12 +233,22 @@ async function fetchAzureCompute(region = "eastus") {
         throw new Error(`Azure VM fallback HTTP ${r2.status} – ${body?.slice(0,300) || 'no response body'}`);
       }
       const pg = await r2.json();
-      const items = (pg.Items || []).filter(it => (it.armRegionName || "").toLowerCase() === region.toLowerCase());
-      for (const x of items) {
+      for (const x of (pg.Items || [])) {
+        if (String(x.armRegionName || "").toLowerCase() !== region.toLowerCase()) continue;
+        const unit = x.unitPrice ?? x.retailPrice ?? null;
+        if (unit == null) continue;
+
+        const pName = String(x.productName || "").toLowerCase();
+        const os = pName.includes("linux") ? "Linux" :
+                   pName.includes("windows") ? "Windows" : "Unknown";
+        const cat = azureCategoryFromSkuOrProduct(x.armSkuName, x.productName);
+        if (cat !== "general" && cat !== "compute" && cat !== "memory") continue;
+
         all.push({
           instance: x.armSkuName || x.skuName || x.meterName || "Unknown",
-          pricePerHourUSD: x.unitPrice ?? x.retailPrice ?? null,
+          pricePerHourUSD: unit,
           region,
+          os,
           vcpu: null,
           ram: null
         });
@@ -177,13 +260,9 @@ async function fetchAzureCompute(region = "eastus") {
   return all;
 }
 
-/**
- * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*).
- * - api-version=2023-01-01-preview (case-sensitive filter values)
- * - URL-encoded $filter
- * - No $top (API uses NextPageLink/$skip for paging)
- * - Field is 'type' ('Consumption'), not 'priceType'
- */
+/* ====================================
+   Azure Managed Disks (Storage) pricing
+   ==================================== */
 async function fetchAzureManagedDisks(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
   const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and type eq 'Consumption'`;
@@ -225,7 +304,7 @@ async function fetchAzureManagedDisks(region = "eastus") {
       }
     }
 
-    next = page.NextPageLink || null; // API returns full URL for next page
+    next = page.NextPageLink || null;
   }
 
   return { region, ssd_monthly: ssd, hdd_monthly: hdd };
@@ -234,11 +313,6 @@ async function fetchAzureManagedDisks(region = "eastus") {
 /* ===========================
    AWS EBS storage (per GB-mo)
    =========================== */
-/**
- * Public EBS per-GB prices vary by region & volume type.
- * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month.
- * Always validate against the official EBS pricing page for your region.
- */
 function getAwsEbsPerGbMonth(region = "us-east-1") {
   const map = {
     "us-east-1": { ssd_per_gb_month: 0.08,  hdd_st1_per_gb_month: 0.045 },
