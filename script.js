@@ -63,6 +63,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("change", () => compare());
   });
+
+  // NEW: wire the static info message for the "i" button
+  bindStorageInfoButton();
 });
 
 // ============================================================
@@ -301,6 +304,24 @@ async function compare() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ============================================================
+// ---------- Storage type info button (static message) ----------
+function bindStorageInfoButton() {
+  const btn = document.getElementById("storageInfoBtn");
+  if (!btn) return;
+
+  const msg = [
+    "Storage comparison:",
+    "• SSD → AWS: EBS General Purpose SSD (gp3), Azure: Standard SSD (E‑series)",
+    "• HDD → AWS: EBS Throughput Optimized HDD (st1), Azure: Standard HDD (S‑series)"
+  ].join("\n");
+
+  btn.addEventListener("click", () => alert(msg));
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alert(msg); }
+  });
 }
 
 // ============================================================
