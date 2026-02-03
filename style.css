@@ -114,9 +114,10 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 }
 
 /* ======================================================
-   NEW: Storage Type info button + (optional) tooltip styling
+   Storage Type info patterns
    ====================================================== */
 
+/* (legacy) Inline input + button wrapper — safe to keep if used elsewhere */
 .input-with-info {
   position: relative;
   display: inline-flex;
@@ -124,7 +125,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   gap: 6px;
 }
 
-/* circular 'i' icon */
+/* (legacy) circular 'i' icon used inside inputs — safe to keep */
 .info-btn {
   width: 24px;
   height: 24px;
@@ -147,34 +148,70 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   border-color:#94a3b8; 
 }
 
-/* Optional tooltip box (kept in case you switch from alert to tooltip later) */
+/* --- NEW: Label with inline blue "i" badge (next to label text) --- */
+.label-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Blue ring "i" like your reference */
+.info-badge {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 50%;
+  border: 1.5px solid #1d4ed8; /* blue outline */
+  color: #1d4ed8;               /* blue "i" */
+  background: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.info-badge:hover,
+.info-badge:focus-visible {
+  background: #eff6ff;          /* light blue hover */
+  border-color: #1e40af;        /* darker ring */
+  color: #1e40af;
+  outline: none;
+}
+
+/* --- Floating tooltip bubble for the Storage Type info --- */
 .info-pop {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 50;
+  margin-top: 6px;              /* gap from anchor (label/select) */
+  z-index: 1000;
   min-width: 280px;
   max-width: 360px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #111827;
-  color: #f9fafb;
+  padding: 12px 14px;
+  border-radius: 4px;
+  background: #2b2b2b;          /* dark bubble (matches your ref) */
+  color: #fff;
   box-shadow: 0 8px 20px rgba(0,0,0,.18);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.35;
-  display: none;
+  display: none;                 /* toggled by JS */
 }
 .info-pop[aria-hidden="false"] { display: block; }
 
+/* Bubble arrow (on left, like your example) */
 .info-pop__arrow {
   position: absolute;
   top: -6px;
-  right: 12px;
+  left: 12px;
   width: 12px;
   height: 12px;
-  background: #111827;
+  background: #2b2b2b;
   transform: rotate(45deg);
 }
+
+/* List inside bubble (if needed) */
 .info-pop__content ul {
   margin: 6px 0 0 18px;
   padding: 0;
@@ -182,6 +219,8 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 .info-pop__content li { margin: 2px 0; }
 
 @media (max-width: 520px) {
-  .info-pop { right: auto; left: 0; }
-  .info-pop__arrow { right: auto; left: 12px; }
+  .info-pop {
+    left: 0 !important; /* keep in frame on small screens */
+    right: auto !important;
+  }
 }
