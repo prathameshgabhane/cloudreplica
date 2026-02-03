@@ -4,7 +4,9 @@
   <meta charset="utf-8"/>
   <title>Cloud Price Compare (AWS vs Azure)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  style.css
+
+  <!-- FIXED: correct stylesheet include -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <h2>Live Cloud Price Compare</h2>
@@ -74,11 +76,11 @@
       <!-- NEW: show the chosen storage -->
       <p class="muted" id="awsStorageSel">Storage: –</p>
 
-      <!-- EXISTING: compute-only price from current JS -->
+      <!-- EXISTING: compute-only price -->
       <p id="awsPrice">Price/hr: –</p>
       <p id="awsMonthly">≈ Monthly: –</p>
 
-      <!-- NEW: storage-only pricing lines -->
+      <!-- NEW: storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="awsStoragePriceHr">–</span>
@@ -90,7 +92,7 @@
 
       <hr class="divider"/>
 
-      <!-- NEW: totals (compute + storage) -->
+      <!-- NEW: totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="awsTotalHr">–</span>
@@ -112,11 +114,11 @@
       <!-- NEW: show the chosen storage -->
       <p class="muted" id="azStorageSel">Storage: –</p>
 
-      <!-- EXISTING: compute-only price from current JS -->
+      <!-- EXISTING: compute-only price -->
       <p id="azPrice">Price/hr: –</p>
       <p id="azMonthly">≈ Monthly: –</p>
 
-      <!-- NEW: storage-only pricing lines -->
+      <!-- NEW: storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="azStoragePriceHr">–</span>
@@ -128,7 +130,7 @@
 
       <hr class="divider"/>
 
-      <!-- NEW: totals (compute + storage) -->
+      <!-- NEW: totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="azTotalHr">–</span>
@@ -140,6 +142,7 @@
     </div>
   </div>
 
-  script.js</script>
+  <!-- FIXED: correct script include -->
+  <script src="script.js"></script>
 </body>
 </html>
