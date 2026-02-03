@@ -4,11 +4,10 @@
   <meta charset="utf-8"/>
   <title>Cloud Price Compare (AWS vs Azure)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css"/>
 </head>
 
 <body>
-
   <h2>Live Cloud Price Compare</h2>
 
   <div class="filters">
@@ -31,7 +30,7 @@
         <select id="ram"></select>
       </div>
 
-      <!-- Storage Amount -->
+      <!-- Storage (GB) -->
       <div>
         <label for="storageAmt">Storage (GB)</label>
         <select id="storageAmt">
@@ -55,9 +54,16 @@
         </select>
       </div>
 
-      <!-- Compare Button -->
+      <!-- Compare -->
       <div>
-        < class="results">
+        <button id="compareBtn" onclick="compare()">Compare</button>
+      </div>
+    </div>
+
+    <div id="status" class="status">Ready</div>
+  </div>
+
+  <div class="results">
     <!-- AWS Panel -->
     <div class="panel">
       <h3>AWS EC2</h3>
@@ -79,7 +85,6 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
-
+  <script src="script.js" defer></script>
 </body>
 </html>
