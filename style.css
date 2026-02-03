@@ -52,3 +52,21 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 @media (max-width: 520px) {
   select { min-width: 130px; }
 }
+
+/* ======================================================
+   OPTIONAL (NEW): Family dropdown styling
+   Appears inside both AWS + Azure result cards AFTER
+   first compare.
+   ====================================================== */
+
+.family-filter {
+  display: flex;               /* horizontal layout */
+  gap: 8px;                    /* nice spacing */
+  align-items: center;         /* label aligns with dropdown */
+  margin: 8px 0 10px;          /* spacing around the row */
+}
+
+.family-filter label {
+  font-weight: 600;
+  color: var(--text);
+}
