@@ -11,12 +11,52 @@
 html, body { margin:0; padding:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--text); background:var(--bg); }
 h2 { text-align:center; margin:24px 0 12px; }
 
-.filters { background:var(--panel); margin:0 auto 20px; padding:16px; max-width:1100px; border-radius:8px; box-shadow:var(--shadow); }
-.filters .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.filters { 
+  background:var(--panel); 
+  margin:0 auto 20px; 
+  padding:16px; 
+  max-width:1100px; 
+  border-radius:8px; 
+  box-shadow:var(--shadow); 
+}
+
+/* FIX: ensure vertical alignment of dropdowns + button */
+.filters .row { 
+  display:flex; 
+  flex-wrap:wrap; 
+  gap:12px; 
+  align-items:center; 
+}
+
 label { font-weight:600; margin-right:4px; display:block; }
-select, button { padding:8px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; min-width:160px; }
-button { background:var(--primary); color:#fff; border:none; cursor:pointer; }
+
+/* Equal height for selects + button */
+select { 
+  padding:8px 10px; 
+  border:1px solid #ccc; 
+  border-radius:6px; 
+  background:#fff; 
+  min-width:160px; 
+  height:40px;
+}
+
+button { 
+  padding:0 18px; 
+  border:1px solid #ccc; 
+  border-radius:6px; 
+  background:var(--primary); 
+  color:#fff; 
+  border:none; 
+  cursor:pointer; 
+  height:40px;                /* FIX: match select height */
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  line-height:1; 
+}
+
 button:disabled { background:#9fbef2; cursor:not-allowed; }
+
 .status { margin-top:10px; font-size:14px; color:var(--muted); }
 
 .results {
@@ -54,16 +94,13 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 }
 
 /* ======================================================
-   OPTIONAL (NEW): Family dropdown styling
-   Appears inside both AWS + Azure result cards AFTER
-   first compare.
+   NEW: Family dropdown styling (appears AFTER compare)
    ====================================================== */
-
 .family-filter {
-  display: flex;               /* horizontal layout */
-  gap: 8px;                    /* nice spacing */
-  align-items: center;         /* label aligns with dropdown */
-  margin: 8px 0 10px;          /* spacing around the row */
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 10px;
 }
 
 .family-filter label {
