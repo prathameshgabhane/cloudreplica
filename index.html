@@ -6,36 +6,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
+
   <h2>Live Cloud Price Compare</h2>
 
   <div class="filters">
     <div class="row">
+      <!-- OS -->
       <div>
         <label for="os">OS</label>
         <select id="os"></select>
       </div>
 
+      <!-- vCPU -->
       <div>
         <label for="cpu">vCPU</label>
         <select id="cpu"></select>
       </div>
 
+      <!-- RAM -->
       <div>
         <label for="ram">RAM (GiB)</label>
         <select id="ram"></select>
       </div>
 
-      <!-- NEW: Storage Type -->
-      <div>
-        <label for="storageType">Storage Type</label>
-        <select id="storageType">
-          <option value="hdd">HDD</option>
-          <option value="ssd">SSD</option>
-        </select>
-      </div>
-
-      <!-- NEW: Storage Amount (GB) -->
+      <!-- Storage Amount -->
       <div>
         <label for="storageAmt">Storage (GB)</label>
         <select id="storageAmt">
@@ -50,18 +46,21 @@
         </select>
       </div>
 
+      <!-- Storage Type -->
       <div>
-        <button id="compareBtn" onclick="compare()">Compare</button>
+        <label for="storageType">Storage Type</label>
+        <select id="storageType">
+          <option value="hdd">HDD</option>
+          <option value="ssd">SSD</option>
+        </select>
       </div>
-    </div>
 
-    <div id="status" class="status">Ready</div>
-  </div>
-
-  <div class="results">
+      <!-- Compare Button -->
+      <div>
+        < class="results">
+    <!-- AWS Panel -->
     <div class="panel">
       <h3>AWS EC2</h3>
-      <!-- Renamed label -->
       <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
       <p id="awsCpu">vCPU: –</p>
       <p id="awsRam">RAM: –</p>
@@ -69,9 +68,9 @@
       <p id="awsMonthly">≈ Monthly: –</p>
     </div>
 
+    <!-- Azure Panel -->
     <div class="panel">
       <h3>Azure VM</h3>
-      <!-- Renamed label -->
       <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
       <p id="azCpu">vCPU: –</p>
       <p id="azRam">RAM: –</p>
@@ -80,6 +79,7 @@
     </div>
   </div>
 
-  <script src="script.js" defer></script>
+  <script src="script.js"></script>
+
 </body>
 </html>
