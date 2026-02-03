@@ -4,9 +4,8 @@
   <meta charset="utf-8"/>
   <title>Cloud Price Compare (AWS vs Azure)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="style.css"/>
+  style.css
 </head>
-
 <body>
   <h2>Live Cloud Price Compare</h2>
 
@@ -68,23 +67,79 @@
     <div class="panel">
       <h3>AWS EC2</h3>
       <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
+
       <p id="awsCpu">vCPU: –</p>
       <p id="awsRam">RAM: –</p>
+
+      <!-- NEW: show the chosen storage -->
+      <p class="muted" id="awsStorageSel">Storage: –</p>
+
+      <!-- EXISTING: compute-only price from current JS -->
       <p id="awsPrice">Price/hr: –</p>
       <p id="awsMonthly">≈ Monthly: –</p>
+
+      <!-- NEW: storage-only pricing lines -->
+      <div class="split">
+        <span class="label">Storage Price/hr:</span>
+        <span id="awsStoragePriceHr">–</span>
+      </div>
+      <div class="split">
+        <span class="label">≈ Storage Monthly:</span>
+        <span id="awsStorageMonthly">–</span>
+      </div>
+
+      <hr class="divider"/>
+
+      <!-- NEW: totals (compute + storage) -->
+      <div class="split total">
+        <span class="label">Total Price/hr:</span>
+        <span id="awsTotalHr">–</span>
+      </div>
+      <div class="split total">
+        <span class="label">≈ Total Monthly:</span>
+        <span id="awsTotalMonthly">–</span>
+      </div>
     </div>
 
     <!-- Azure Panel -->
     <div class="panel">
       <h3>Azure VM</h3>
       <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
+
       <p id="azCpu">vCPU: –</p>
       <p id="azRam">RAM: –</p>
+
+      <!-- NEW: show the chosen storage -->
+      <p class="muted" id="azStorageSel">Storage: –</p>
+
+      <!-- EXISTING: compute-only price from current JS -->
       <p id="azPrice">Price/hr: –</p>
       <p id="azMonthly">≈ Monthly: –</p>
+
+      <!-- NEW: storage-only pricing lines -->
+      <div class="split">
+        <span class="label">Storage Price/hr:</span>
+        <span id="azStoragePriceHr">–</span>
+      </div>
+      <div class="split">
+        <span class="label">≈ Storage Monthly:</span>
+        <span id="azStorageMonthly">–</span>
+      </div>
+
+      <hr class="divider"/>
+
+      <!-- NEW: totals (compute + storage) -->
+      <div class="split total">
+        <span class="label">Total Price/hr:</span>
+        <span id="azTotalHr">–</span>
+      </div>
+      <div class="split total">
+        <span class="label">≈ Total Monthly:</span>
+        <span id="azTotalMonthly">–</span>
+      </div>
     </div>
   </div>
 
-  <script src="script.js" defer></script>
+  script.js</script>
 </body>
 </html>
