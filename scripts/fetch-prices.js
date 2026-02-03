@@ -119,11 +119,12 @@ async function fetchAwsCompute(region = "us-east-1") {
 /**
  * Fetch Azure VM retail prices for compute.
  * Uses api-version=2023-01-01-preview and URL-encodes $filter (case-sensitive filters).
- * Docs: Azure Retail Prices REST API overview. 
+ * Note: field is 'type' (Consumption), not 'priceType'. 
+ * Docs show case-sensitive filter behavior in preview version; API examples include "type": "Consumption".
  */
 async function fetchAzureCompute(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
-  const filter = `serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and priceType eq 'Consumption'`;
+  const filter = `serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and type eq 'Consumption'`;
   const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
 
   const all = [];
@@ -149,9 +150,9 @@ async function fetchAzureCompute(region = "eastus") {
     next = page.NextPageLink || null;
   }
 
-  // Optional resilience: fallback w/o region in server filter (client-side region filter)
+  // Optional fallback (without region in server filter)
   if (all.length === 0) {
-    const fbFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`;
+    const fbFilter = `serviceName eq 'Virtual Machines' and type eq 'Consumption'`;
     let url = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(fbFilter)}&$top=200`;
     while (url) {
       const r2 = await fetch(url);
@@ -180,11 +181,11 @@ async function fetchAzureCompute(region = "eastus") {
 /**
  * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*).
  * Uses api-version=2023-01-01-preview and URL-encodes $filter.
- * Managed Disks are billed monthly by tier/size; see pricing page. 
+ * Note: field is 'type' (Consumption), not 'priceType'.
  */
 async function fetchAzureManagedDisks(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
-  const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and priceType eq 'Consumption'`;
+  const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and type eq 'Consumption'`;
   const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
 
   const ssd = {}; // { 4: price, 8: price, ... }
@@ -234,10 +235,9 @@ async function fetchAzureManagedDisks(region = "eastus") {
    AWS EBS storage (per GB-mo)
    =========================== */
 /**
- * Public EBS per-GB prices vary by region & volume type. For a quick win we ship a minimal
- * region map (expand as needed). Always validate against the official pricing page.
+ * Public EBS per-GB prices vary by region & volume type.
  * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month.
- * Confirm latest rates in your target region. 
+ * Always validate against the official EBS pricing page for your region. 
  */
 function getAwsEbsPerGbMonth(region = "us-east-1") {
   const map = {
