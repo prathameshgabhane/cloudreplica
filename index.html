@@ -46,14 +46,30 @@
         </select>
       </div>
 
-      <!-- Storage Type -->
+      <!-- UPDATED: Storage Type + Info Button -->
       <div>
-        <label for="storageType">Storage Type</label>
-        <select id="storageType">
-          <option value="hdd">HDD</option>
-          <option value="ssd">SSD</option>
-        </select>
+        value="hdd">HDD</option>
+            <option value="ssd">SSD</option>
+          </select>
+
+          <!-- Info button -->
+          <button type="button" class="info-btn" id="storageInfoBtn" aria-label="What are we comparing?">i</button>
+
+          <!-- Tooltip -->
+          <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
+            <div class="info-pop__arrow"></div>
+            <div class="info-pop__content">
+              For <strong>HDD</strong>, we compare:
+              <ul>
+                <li><strong>AWS</strong>: EBS <em>Throughput Optimized HDD (st1)</em></li>
+                <li><strong>Azure</strong>: <em>Standard HDD</em> (S‑series managed disk)</li>
+              </ul>
+              Switch to <strong>SSD</strong> to see gp3 vs Standard SSD.
+            </div>
+          </div>
+        </div>
       </div>
+      <!-- END updated Storage Type -->
 
       <!-- Compare -->
       <div>
