@@ -1,6 +1,6 @@
 // scripts/fetch-prices.js (CommonJS)
-// Purpose: Build a compact prices.json with correct AWS On-Demand hourly rates
-// and Azure Retail prices for your site (no creds, no backend).
+// Purpose: Build a compact prices.json with correct AWS On-Demand hourly rates,
+// Azure Retail compute prices, and Managed Disk storage pricing (no creds, no backend).
 
 const fetch = require("node-fetch");
 const fs = require("fs");
@@ -10,8 +10,8 @@ const fs = require("fs");
    ======================== */
 
 // Primary regions to include
-const AWS_REGION = "us-east-1";    // You can switch to "ap-south-1" later
-const AZURE_REGION = "eastus";     // Or "centralindia" / "southindia"
+const AWS_REGION   = process.env.AWS_REGION   || "us-east-1";  // e.g., "ap-south-1"
+const AZURE_REGION = process.env.AZURE_REGION || "eastus";     // e.g., "centralindia"
 
 // Optional: whitelist popular, general-purpose/compute families to reduce file size
 // const AWS_FAMILY_WHITELIST = /^(t3|t3a|t4g|m5|m6g|c5|c6g)/i;
@@ -23,17 +23,16 @@ const AZURE_REGION = "eastus";     // Or "centralindia" / "southindia"
 
 // Returns true if a product's attributes look like standard On-Demand, Linux, shared tenancy, used capacity
 function isLinuxSharedUsed(attrs) {
-  const os   = String(attrs.operatingSystem || "").toLowerCase();
-  const ten  = String(attrs.tenancy || "").toLowerCase();
-  const pre  = String(attrs.preInstalledSw || "").toLowerCase();
-  const cap  = String(attrs.capacitystatus || "").toLowerCase();
+  const os  = String(attrs.operatingSystem || "").toLowerCase();
+  const ten = String(attrs.tenancy         || "").toLowerCase();
+  const pre = String(attrs.preInstalledSw  || "").toLowerCase();
+  const cap = String(attrs.capacitystatus  || "").toLowerCase();
   return os === "linux" && ten === "shared" && pre === "na" && cap === "used";
 }
 
 // From a single SKU's OnDemand term set, pick the correct *hourly* instance price
 function pickHourlyUsd(onDemandTerms) {
   if (!onDemandTerms) return null;
-
   for (const term of Object.values(onDemandTerms)) {
     for (const dim of Object.values(term.priceDimensions || {})) {
       const unit = String(dim.unit || "").toLowerCase();   // should be "hrs"
@@ -58,7 +57,7 @@ function pickHourlyUsd(onDemandTerms) {
 /* ===========================
    AWS: Fetch & parse (Bulk)
    =========================== */
-async function fetchAws(region = "us-east-1") {
+async function fetchAwsCompute(region = "us-east-1") {
   const url = `https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/${region}/index.json`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`AWS pricing (${region}) HTTP ${resp.status}`);
@@ -89,13 +88,7 @@ async function fetchAws(region = "us-east-1") {
     const price = pickHourlyUsd(onDemandTerms);
     if (price == null || price === 0) continue;
 
-    rows.push({
-      instance,
-      vcpu,
-      ram,
-      pricePerHourUSD: price,
-      region
-    });
+    rows.push({ instance, vcpu, ram, pricePerHourUSD: price, region });
   }
 
   // OPTIONAL: cap per family to keep file smaller
@@ -116,28 +109,103 @@ async function fetchAws(region = "us-east-1") {
       .slice(0, MAX_PER_FAMILY)
     );
   */
-
   return rows;
 }
 
 /* ====================================
    Azure Retail Prices API (public)
    ==================================== */
-async function fetchAzure(region = "eastus") {
-  // NOTE: '&' not '&amp;' in Node.js (the earlier HTML entity causes a bad URL)
-  const url = `https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and priceType eq 'Consumption'&$top=200`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Azure pricing (${region}) HTTP ${resp.status}`);
-  const data = await resp.json();
 
-  // Keep the row minimal; vCPU/RAM are inferred in the client script
-  return (data.Items || []).map(x => ({
-    instance: x.armSkuName || x.skuName || x.meterName || "Unknown",
-    pricePerHourUSD: x.unitPrice ?? x.retailPrice ?? null,
-    region,
-    vcpu: null,
-    ram: null
-  }));
+/**
+ * Fetch Azure VM retail prices for compute (as before)
+ */
+async function fetchAzureCompute(region = "eastus") {
+  // IMPORTANT: use '&' not '&amp;' in Node.js
+  const url = `https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and priceType eq 'Consumption'&$top=200`;
+  const all = [];
+  let next = url;
+
+  while (next) {
+    const resp = await fetch(next);
+    if (!resp.ok) throw new Error(`Azure VM pricing (${region}) HTTP ${resp.status}`);
+    const page = await resp.json();
+    const items = page.Items || [];
+    for (const x of items) {
+      all.push({
+        instance: x.armSkuName || x.skuName || x.meterName || "Unknown",
+        pricePerHourUSD: x.unitPrice ?? x.retailPrice ?? null,
+        region,
+        vcpu: null,
+        ram: null
+      });
+    }
+    next = page.NextPageLink || null;
+  }
+  return all;
+}
+
+/**
+ * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*)
+ * We filter productName/skuName for "Managed Disks" in the target region.
+ */
+async function fetchAzureManagedDisks(region = "eastus") {
+  // We query the Storage service where productName includes "Managed Disks"
+  const base = `https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and priceType eq 'Consumption'`;
+  const ssd = {}; // { 4: <price>, 8: <price>, ... }
+  const hdd = {}; // { 32: <price>, 64: <price>, ... }
+
+  // Map SKU -> GiB
+  const SSD_MAP = { E1: 4, E2: 8, E3:16, E4:32, E6:64, E10:128, E15:256, E20:512 };
+  const HDD_MAP = { S4:32, S6:64, S10:128, S15:256, S20:512 };
+
+  let next = base;
+  while (next) {
+    const resp = await fetch(next);
+    if (!resp.ok) throw new Error(`Azure Managed Disks pricing (${region}) HTTP ${resp.status}`);
+    const page = await resp.json();
+
+    for (const it of (page.Items || [])) {
+      // We want monthly charges; API typically returns "1/Month" (unitOfMeasure or unitName)
+      const perMonth = String(it.unitOfMeasure || it.unitName || "").toLowerCase().includes("month");
+      if (!perMonth) continue;
+
+      const sku = (it.armSkuName || it.skuName || "").toUpperCase(); // e.g., "E10 LRS", "S6 LRS"
+      const price = it.unitPrice ?? it.retailPrice ?? null;
+      if (!price || !sku) continue;
+
+      // Extract code like E10 or S6
+      const m = sku.match(/\b([ES]\d+)\b/);
+      if (!m) continue;
+      const code = m[1];
+
+      if (code.startsWith("E") && SSD_MAP[code] != null) {
+        ssd[SSD_MAP[code]] = price;
+      } else if (code.startsWith("S") && HDD_MAP[code] != null) {
+        hdd[HDD_MAP[code]] = price;
+      }
+    }
+    next = page.NextPageLink || null;
+  }
+
+  return { region, ssd_monthly: ssd, hdd_monthly: hdd };
+}
+
+/* ===========================
+   AWS EBS storage (per GB-mo)
+   =========================== */
+/**
+ * Public EBS per-GB prices vary by region & volume type. For a quick win we ship a minimal
+ * region map (expand as needed). Always validate against the official pricing page. 
+ * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month. 
+ * (Confirm latest in your target region.)  [1](https://cloudchipr.com/blog/aws-ebs-pricing)[2](https://docs.azure.cn/en-us/virtual-machines/managed-disks-overview)
+ */
+function getAwsEbsPerGbMonth(region = "us-east-1") {
+  const map = {
+    "us-east-1": { ssd_per_gb_month: 0.08,  hdd_st1_per_gb_month: 0.045 },
+    // Add more regions here as needed:
+    // "ap-south-1": { ssd_per_gb_month: 0.10, hdd_st1_per_gb_month: 0.050 },
+  };
+  return map[region] || map["us-east-1"];
 }
 
 /* ===========================
@@ -145,21 +213,35 @@ async function fetchAzure(region = "eastus") {
    =========================== */
 (async () => {
   try {
-    const aws   = await fetchAws(AWS_REGION);
-    const azure = await fetchAzure(AZURE_REGION);
+    // Compute prices
+    const awsCompute   = await fetchAwsCompute(AWS_REGION);
+    const azCompute    = await fetchAzureCompute(AZURE_REGION);
+
+    // Storage prices
+    const azDisks      = await fetchAzureManagedDisks(AZURE_REGION);
+    const awsEbs       = getAwsEbsPerGbMonth(AWS_REGION);
 
     const output = {
       meta: {
-        os: ["Linux", "Windows"],
+        os:   ["Linux", "Windows"],
         vcpu: [1, 2, 4, 8, 16],
         ram:  [1, 2, 4, 8, 16, 32]
       },
-      aws,
-      azure
+      aws: awsCompute,
+      azure: azCompute,
+      storage: {
+        aws: { region: AWS_REGION, ...awsEbs },
+        azure: azDisks   // { region, ssd_monthly: {...}, hdd_monthly: {...} }
+      }
     };
 
     fs.writeFileSync("data/prices.json", JSON.stringify(output, null, 2));
-    console.log(`✅ data/prices.json updated. AWS: ${aws.length} | Azure: ${azure.length}`);
+    console.log(`✅ data/prices.json updated.
+    • AWS compute: ${awsCompute.length}
+    • Azure compute: ${azCompute.length}
+    • Azure disks (SSD sizes): ${Object.keys(azDisks.ssd_monthly).length}
+    • Azure disks (HDD sizes): ${Object.keys(azDisks.hdd_monthly).length}
+    • AWS EBS per-GB: gp3=${awsEbs.ssd_per_gb_month} st1=${awsEbs.hdd_st1_per_gb_month}`);
   } catch (e) {
     console.error("❌ Failed to update prices:", e);
     process.exit(1);
