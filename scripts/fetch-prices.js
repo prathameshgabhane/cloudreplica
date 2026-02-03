@@ -118,18 +118,17 @@ async function fetchAwsCompute(region = "us-east-1") {
 
 /**
  * Fetch Azure VM retail prices for compute.
- * Uses api-version=2023-01-01-preview and URL-encodes $filter (case-sensitive filters).
- * Note: field is 'type' (Consumption), not 'priceType'. 
- * Docs show case-sensitive filter behavior in preview version; API examples include "type": "Consumption".
+ * - api-version=2023-01-01-preview (case-sensitive filter values)
+ * - URL-encoded $filter
+ * - No $top (API uses NextPageLink/$skip for paging)
+ * - Field is 'type' ('Consumption'), not 'priceType'
  */
 async function fetchAzureCompute(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
   const filter = `serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and type eq 'Consumption'`;
-  const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
+  let next = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}`;
 
   const all = [];
-  let next = base;
-
   while (next) {
     const resp = await fetch(next);
     if (!resp.ok) {
@@ -147,13 +146,13 @@ async function fetchAzureCompute(region = "eastus") {
         ram: null
       });
     }
-    next = page.NextPageLink || null;
+    next = page.NextPageLink || null; // API returns full URL for next page
   }
 
-  // Optional fallback (without region in server filter)
+  // Optional fallback (broaden filter and filter region client-side)
   if (all.length === 0) {
     const fbFilter = `serviceName eq 'Virtual Machines' and type eq 'Consumption'`;
-    let url = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(fbFilter)}&$top=200`;
+    let url = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(fbFilter)}`;
     while (url) {
       const r2 = await fetch(url);
       if (!r2.ok) {
@@ -180,13 +179,15 @@ async function fetchAzureCompute(region = "eastus") {
 
 /**
  * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*).
- * Uses api-version=2023-01-01-preview and URL-encodes $filter.
- * Note: field is 'type' (Consumption), not 'priceType'.
+ * - api-version=2023-01-01-preview (case-sensitive filter values)
+ * - URL-encoded $filter
+ * - No $top (API uses NextPageLink/$skip for paging)
+ * - Field is 'type' ('Consumption'), not 'priceType'
  */
 async function fetchAzureManagedDisks(region = "eastus") {
   const api = "https://prices.azure.com/api/retail/prices";
   const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and type eq 'Consumption'`;
-  const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
+  let next = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}`;
 
   const ssd = {}; // { 4: price, 8: price, ... }
   const hdd = {}; // { 32: price, 64: price, ... }
@@ -195,7 +196,6 @@ async function fetchAzureManagedDisks(region = "eastus") {
   const SSD_MAP = { E1: 4, E2: 8, E3: 16, E4: 32, E6: 64, E10: 128, E15: 256, E20: 512 };
   const HDD_MAP = { S4: 32, S6: 64, S10: 128, S15: 256, S20: 512 };
 
-  let next = base;
   while (next) {
     const resp = await fetch(next);
     if (!resp.ok) {
@@ -225,7 +225,7 @@ async function fetchAzureManagedDisks(region = "eastus") {
       }
     }
 
-    next = page.NextPageLink || null;
+    next = page.NextPageLink || null; // API returns full URL for next page
   }
 
   return { region, ssd_monthly: ssd, hdd_monthly: hdd };
@@ -237,7 +237,7 @@ async function fetchAzureManagedDisks(region = "eastus") {
 /**
  * Public EBS per-GB prices vary by region & volume type.
  * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month.
- * Always validate against the official EBS pricing page for your region. 
+ * Always validate against the official EBS pricing page for your region.
  */
 function getAwsEbsPerGbMonth(region = "us-east-1") {
   const map = {
