@@ -117,17 +117,24 @@ async function fetchAwsCompute(region = "us-east-1") {
    ==================================== */
 
 /**
- * Fetch Azure VM retail prices for compute (as before)
+ * Fetch Azure VM retail prices for compute.
+ * Uses api-version=2023-01-01-preview and URL-encodes $filter (case-sensitive filters).
+ * Docs: Azure Retail Prices REST API overview. 
  */
 async function fetchAzureCompute(region = "eastus") {
-  // IMPORTANT: use '&' not '&amp;' in Node.js
-  const url = `https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and priceType eq 'Consumption'&$top=200`;
+  const api = "https://prices.azure.com/api/retail/prices";
+  const filter = `serviceName eq 'Virtual Machines' and armRegionName eq '${region}' and priceType eq 'Consumption'`;
+  const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
+
   const all = [];
-  let next = url;
+  let next = base;
 
   while (next) {
     const resp = await fetch(next);
-    if (!resp.ok) throw new Error(`Azure VM pricing (${region}) HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const body = await safeText(resp);
+      throw new Error(`Azure VM pricing (${region}) HTTP ${resp.status} – ${body?.slice(0,300) || 'no response body'}`);
+    }
     const page = await resp.json();
     const items = page.Items || [];
     for (const x of items) {
@@ -141,40 +148,72 @@ async function fetchAzureCompute(region = "eastus") {
     }
     next = page.NextPageLink || null;
   }
+
+  // Optional resilience: fallback w/o region in server filter (client-side region filter)
+  if (all.length === 0) {
+    const fbFilter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption'`;
+    let url = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(fbFilter)}&$top=200`;
+    while (url) {
+      const r2 = await fetch(url);
+      if (!r2.ok) {
+        const body = await safeText(r2);
+        throw new Error(`Azure VM fallback HTTP ${r2.status} – ${body?.slice(0,300) || 'no response body'}`);
+      }
+      const pg = await r2.json();
+      const items = (pg.Items || []).filter(it => (it.armRegionName || "").toLowerCase() === region.toLowerCase());
+      for (const x of items) {
+        all.push({
+          instance: x.armSkuName || x.skuName || x.meterName || "Unknown",
+          pricePerHourUSD: x.unitPrice ?? x.retailPrice ?? null,
+          region,
+          vcpu: null,
+          ram: null
+        });
+      }
+      url = pg.NextPageLink || null;
+    }
+  }
+
   return all;
 }
 
 /**
- * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*)
- * We filter productName/skuName for "Managed Disks" in the target region.
+ * Fetch Azure Managed Disk (Storage) retail prices (monthly) for Standard SSD (E*) and Standard HDD (S*).
+ * Uses api-version=2023-01-01-preview and URL-encodes $filter.
+ * Managed Disks are billed monthly by tier/size; see pricing page. 
  */
 async function fetchAzureManagedDisks(region = "eastus") {
-  // We query the Storage service where productName includes "Managed Disks"
-  const base = `https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and priceType eq 'Consumption'`;
-  const ssd = {}; // { 4: <price>, 8: <price>, ... }
-  const hdd = {}; // { 32: <price>, 64: <price>, ... }
+  const api = "https://prices.azure.com/api/retail/prices";
+  const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and priceType eq 'Consumption'`;
+  const base = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}&$top=200`;
 
-  // Map SKU -> GiB
-  const SSD_MAP = { E1: 4, E2: 8, E3:16, E4:32, E6:64, E10:128, E15:256, E20:512 };
-  const HDD_MAP = { S4:32, S6:64, S10:128, S15:256, S20:512 };
+  const ssd = {}; // { 4: price, 8: price, ... }
+  const hdd = {}; // { 32: price, 64: price, ... }
+
+  // SKU -> GiB maps (Standard SSD E*, Standard HDD S*)
+  const SSD_MAP = { E1: 4, E2: 8, E3: 16, E4: 32, E6: 64, E10: 128, E15: 256, E20: 512 };
+  const HDD_MAP = { S4: 32, S6: 64, S10: 128, S15: 256, S20: 512 };
 
   let next = base;
   while (next) {
     const resp = await fetch(next);
-    if (!resp.ok) throw new Error(`Azure Managed Disks pricing (${region}) HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const body = await safeText(resp);
+      throw new Error(`Azure Managed Disks pricing (${region}) HTTP ${resp.status} – ${body?.slice(0,300) || 'no response body'}`);
+    }
     const page = await resp.json();
 
     for (const it of (page.Items || [])) {
-      // We want monthly charges; API typically returns "1/Month" (unitOfMeasure or unitName)
-      const perMonth = String(it.unitOfMeasure || it.unitName || "").toLowerCase().includes("month");
+      // We want monthly charges; API typically returns "1 Month" or "1/Month"
+      const uom = String(it.unitOfMeasure || it.unitName || "").toLowerCase();
+      const perMonth = uom.includes("month");
       if (!perMonth) continue;
 
-      const sku = (it.armSkuName || it.skuName || "").toUpperCase(); // e.g., "E10 LRS", "S6 LRS"
-      const price = it.unitPrice ?? it.retailPrice ?? null;
-      if (!price || !sku) continue;
+      const skuRaw = (it.armSkuName || it.skuName || "").toUpperCase(); // e.g., "E10 LRS", "S6 LRS"
+      const price  = it.unitPrice ?? it.retailPrice ?? null;
+      if (!price || !skuRaw) continue;
 
-      // Extract code like E10 or S6
-      const m = sku.match(/\b([ES]\d+)\b/);
+      const m = skuRaw.match(/\b([ES]\d+)\b/);
       if (!m) continue;
       const code = m[1];
 
@@ -184,6 +223,7 @@ async function fetchAzureManagedDisks(region = "eastus") {
         hdd[HDD_MAP[code]] = price;
       }
     }
+
     next = page.NextPageLink || null;
   }
 
@@ -195,9 +235,9 @@ async function fetchAzureManagedDisks(region = "eastus") {
    =========================== */
 /**
  * Public EBS per-GB prices vary by region & volume type. For a quick win we ship a minimal
- * region map (expand as needed). Always validate against the official pricing page. 
- * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month. 
- * (Confirm latest in your target region.)  [1](https://cloudchipr.com/blog/aws-ebs-pricing)[2](https://docs.azure.cn/en-us/virtual-machines/managed-disks-overview)
+ * region map (expand as needed). Always validate against the official pricing page.
+ * gp3 commonly lists at ~$0.08/GB-month in us-east-1; st1 around ~$0.045/GB-month.
+ * Confirm latest rates in your target region. 
  */
 function getAwsEbsPerGbMonth(region = "us-east-1") {
   const map = {
@@ -247,3 +287,8 @@ function getAwsEbsPerGbMonth(region = "us-east-1") {
     process.exit(1);
   }
 })();
+
+/* ========== small helper for better error logs ========== */
+async function safeText(resp) {
+  try { return await resp.text(); } catch { return ""; }
+}
