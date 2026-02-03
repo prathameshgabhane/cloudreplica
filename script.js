@@ -57,6 +57,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   setSelectValue("os", "Linux");
   setSelectValue("cpu", "2");
   setSelectValue("ram", "4");
+
+  // Auto re-compare when a family is changed (revealed after first compare)
+  ["awsFamily", "azFamily"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => compare());
+  });
 });
 
 // ============================================================
@@ -101,6 +107,48 @@ function sumSafe(a, b) {
   return na + nb;
 }
 
+// ---------- Family UI helpers ----------
+function showFamilyFilters() {
+  const awsW = document.getElementById("awsFamilyWrap");
+  const azW  = document.getElementById("azFamilyWrap");
+  if (awsW) awsW.style.display = "flex";
+  if (azW)  azW.style.display  = "flex";
+}
+function resetFamilyFilters() {
+  const awsW = document.getElementById("awsFamilyWrap");
+  const azW  = document.getElementById("azFamilyWrap");
+  const awsS = document.getElementById("awsFamily");
+  const azS  = document.getElementById("azFamily");
+  if (awsW) awsW.style.display = "none";
+  if (azW)  azW.style.display  = "none";
+  if (awsS) awsS.value = "";
+  if (azS)  azS.value = "";
+}
+
+// ---------- Family membership tests (client-side) ----------
+function isAwsInFamily(inst, family) {
+  if (!family) return true; // Auto
+  const s = String(inst || "").toLowerCase();
+  if (family === "general")  return /^[mt]/.test(s);       // t*, m*
+  if (family === "compute")  return /^c/.test(s);          // c*
+  if (family === "memory")   return /^[rxz]/.test(s);      // r*, x*, z*
+  return true;
+}
+function isAzureInFamily(inst, family) {
+  if (!family) return true; // Auto
+  const n = String(inst || "").toLowerCase();
+  let first = null;
+  const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -> "d4s..."
+  if (m && m[1] && m[1].length) first = m[1][0];
+  else first = n[0] || null;
+  if (!first) return true;
+
+  if (family === "general")  return first === "d" || first === "b"; // D/B
+  if (family === "compute")  return first === "f";                  // F
+  if (family === "memory")   return first === "e" || first === "m"; // E/M
+  return true;
+}
+
 // ============================================================
 // ---------- Compare using local prices.json ----------
 async function compare() {
@@ -114,6 +162,10 @@ async function compare() {
   const storageType  = (document.getElementById("storageType")?.value || "hdd").toLowerCase(); // 'ssd' | 'hdd'
   const storageAmtGB = Number(document.getElementById("storageAmt")?.value || 0);
 
+  // Family selections ('' = Auto)
+  const familyAws = document.getElementById("awsFamily")?.value || "";
+  const familyAz  = document.getElementById("azFamily")?.value  || "";
+
   try {
     resetCards();
 
@@ -124,7 +176,7 @@ async function compare() {
     // --------- AWS selection ----------
     let awsCard;
     try {
-      const a = findBestAws(data.aws || [], vcpu, ram, os);
+      const a = findBestAws(data.aws || [], vcpu, ram, os, familyAws);
       awsCard = a ? {
         instance: a.instance,
         vcpu: a.vcpu,
@@ -139,7 +191,7 @@ async function compare() {
     // --------- Azure selection ----------
     let azCard;
     try {
-      const z = findBestAzure(data.azure || [], vcpu, ram, os);
+      const z = findBestAzure(data.azure || [], vcpu, ram, os, familyAz);
       azCard = z ? {
         instance: z.instance,
         vcpu: z.vcpu ?? vcpu,
@@ -238,6 +290,9 @@ async function compare() {
     safeSetText("azTotalHr",      fmt(azTotalHr));
     safeSetText("azTotalMonthly", fmt(azTotalMonthly));
 
+    // Reveal family filters after first comparison
+    showFamilyFilters();
+
     setStatus("Comparison complete ✓");
   } catch (err) {
     console.error(err);
@@ -328,17 +383,28 @@ function resetCards() {
   safeSetText("azStorageMonthly",   "—");
   safeSetText("azTotalHr",          "—");
   safeSetText("azTotalMonthly",     "—");
+
+  // Hide family filters until first successful compare
+  resetFamilyFilters();
 }
 
 // ============================================================
-// ---------- Compute matching logic (unchanged) ----------
-
-// Pick the AWS instance with minimal distance to requested vCPU/RAM.
-function findBestAws(list, vcpu, ram, os) {
+// ---------- Compute matching logic with OS + Family ----------
+function findBestAws(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0) throw new Error("AWS price list is empty");
 
-  const filtered = list.filter(x => isFinite(x.vcpu) && isFinite(x.ram) && isFinite(x.pricePerHourUSD));
-  if (filtered.length === 0) throw new Error("No AWS entries with vCPU/RAM/price");
+  const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
+  const filtered = list.filter(x =>
+    isFinite(x.vcpu) &&
+    isFinite(x.ram) &&
+    isFinite(x.pricePerHourUSD) &&
+    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &&
+    isAwsInFamily(x.instance, family)
+  );
+  if (filtered.length === 0) {
+    const fLabel = family ? ` family=${family}` : "";
+    throw new Error(`No AWS entries for OS=${os || "any"}${fLabel}`);
+  }
 
   let best = null;
   let bestScore = Infinity;
@@ -353,11 +419,21 @@ function findBestAws(list, vcpu, ram, os) {
   return best;
 }
 
-// Azure: enrich missing vCPU/RAM using SKU name heuristics, then same scoring
-function findBestAzure(list, vcpu, ram, os) {
+function findBestAzure(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0) throw new Error("Azure price list is empty");
 
-  const enriched = list.map(x => {
+  const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
+  const pre = list.filter(x =>
+    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &&
+    isAzureInFamily(x.instance, family)
+  );
+  if (pre.length === 0) {
+    const fLabel = family ? ` family=${family}` : "";
+    throw new Error(`No Azure entries for OS=${os || "any"}${fLabel}`);
+  }
+
+  // Enrich with heuristics for missing vCPU/RAM
+  const enriched = pre.map(x => {
     const meta = inferAzureCoresRamFromName(x.instance);
     return {
       ...x,
@@ -374,7 +450,7 @@ function findBestAzure(list, vcpu, ram, os) {
       score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
     } else {
       const price = Number(x.pricePerHourUSD) || Infinity;
-      score = 500 + price;
+      score = 500 + price; // prefer known-spec SKUs
     }
     const tieBreaker = Number(x.pricePerHourUSD) || Infinity;
     if (score < bestScore || (score === bestScore && tieBreaker < (best?.pricePerHourUSD ?? Infinity))) {
@@ -402,6 +478,7 @@ function inferAzureCoresRamFromName(name) {
   else if (n.startsWith("standard_f")) familyRamPerCore = 2;
   else if (n.startsWith("standard_e")) familyRamPerCore = 8;
   else if (n.startsWith("standard_b")) familyRamPerCore = 4;
+  else if (n.startsWith("standard_m")) familyRamPerCore = 16; // rough fallback for M
 
   const ram = (vcpu && familyRamPerCore) ? vcpu * familyRamPerCore : null;
   return { vcpu, ram };
