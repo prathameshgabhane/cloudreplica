@@ -114,7 +114,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 }
 
 /* ======================================================
-   NEW: Storage Type info button + tooltip styling
+   NEW: Storage Type info button + (optional) tooltip styling
    ====================================================== */
 
 .input-with-info {
@@ -124,6 +124,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   gap: 6px;
 }
 
+/* circular 'i' icon */
 .info-btn {
   width: 24px;
   height: 24px;
@@ -141,13 +142,12 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease;
 }
-
 .info-btn:hover { 
   background:#eef2ff; 
   border-color:#94a3b8; 
 }
 
-/* Tooltip box */
+/* Optional tooltip box (kept in case you switch from alert to tooltip later) */
 .info-pop {
   position: absolute;
   top: calc(100% + 8px);
@@ -164,12 +164,8 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   line-height: 1.35;
   display: none;
 }
+.info-pop[aria-hidden="false"] { display: block; }
 
-.info-pop[aria-hidden="false"] { 
-  display: block; 
-}
-
-/* Tooltip arrow */
 .info-pop__arrow {
   position: absolute;
   top: -6px;
@@ -179,23 +175,13 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   background: #111827;
   transform: rotate(45deg);
 }
-
 .info-pop__content ul {
   margin: 6px 0 0 18px;
   padding: 0;
 }
-
-.info-pop__content li { 
-  margin: 2px 0; 
-}
+.info-pop__content li { margin: 2px 0; }
 
 @media (max-width: 520px) {
-  .info-pop { 
-    right: auto; 
-    left: 0; 
-  }
-  .info-pop__arrow { 
-    right: auto; 
-    left: 12px; 
-  }
+  .info-pop { right: auto; left: 0; }
+  .info-pop__arrow { right: auto; left: 12px; }
 }
