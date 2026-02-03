@@ -64,8 +64,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (el) el.addEventListener("change", () => compare());
   });
 
-  // NEW: wire the static info message for the "i" button
-  bindStorageInfoButton();
+  // NEW: initialize the non-blocking tooltip for the Storage Type info button
+  initStorageTypeTooltip();
 });
 
 // ============================================================
@@ -300,27 +300,89 @@ async function compare() {
   } catch (err) {
     console.error(err);
     setStatus(`Error: ${err.message}`, "error");
-    alert("Unable to read local prices. Please try again.");
+    alert("Unable to read local prices. Please try again.`);
   } finally {
     btn.disabled = false;
   }
 }
 
 // ============================================================
-// ---------- Storage type info button (static message) ----------
-function bindStorageInfoButton() {
+// ---------- Storage Type tooltip (non-blocking bubble) ----------
+function initStorageTypeTooltip() {
   const btn = document.getElementById("storageInfoBtn");
-  if (!btn) return;
+  const tip = document.getElementById("storageInfoTip");
+  const label = document.querySelector('label[for="storageType"].label-with-info');
+  const select = document.getElementById("storageType");
+  if (!btn || !tip || !label || !select) return;
 
-  const msg = [
-    "Storage comparison:",
-    "• SSD → AWS: EBS General Purpose SSD (gp3), Azure: Standard SSD (E‑series)",
-    "• HDD → AWS: EBS Throughput Optimized HDD (st1), Azure: Standard HDD (S‑series)"
-  ].join("\n");
+  // Place the bubble just below the Storage Type select
+  function positionTip() {
+    const rect = select.getBoundingClientRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
 
-  btn.addEventListener("click", () => alert(msg));
+    const left = rect.left + scrollX;
+    const top  = rect.bottom + scrollY + 6; // small gap below select
+
+    tip.style.position = "absolute";
+    tip.style.left = `${left}px`;
+    tip.style.top  = `${top}px`;
+
+    // Move arrow to roughly align under the i badge
+    const arrow = tip.querySelector(".info-pop__arrow");
+    if (arrow) {
+      const btnRect = btn.getBoundingClientRect();
+      const offset = Math.max(10, Math.min(28, btnRect.left - rect.left));
+      arrow.style.left = `${offset}px`;
+    }
+  }
+
+  function openTip() {
+    positionTip();
+    tip.setAttribute("aria-hidden", "false");
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outsideClose, { capture: true });
+    document.addEventListener("keydown", escClose);
+  }
+
+  function closeTip() {
+    tip.setAttribute("aria-hidden", "true");
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outsideClose, { capture: true });
+    document.removeEventListener("keydown", escClose);
+  }
+
+  function toggleTip() {
+    const open = tip.getAttribute("aria-hidden") === "false";
+    open ? closeTip() : openTip();
+  }
+
+  function outsideClose(e) {
+    if (tip.contains(e.target) || btn.contains(e.target) || label.contains(e.target) || select.contains(e.target)) return;
+    closeTip();
+  }
+
+  function escClose(e) {
+    if (e.key === "Escape") closeTip();
+  }
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleTip();
+  });
   btn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alert(msg); }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleTip();
+    }
+  });
+
+  // Reposition while open on resize/scroll
+  window.addEventListener("resize", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
+  });
+  window.addEventListener("scroll", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
 }
 
