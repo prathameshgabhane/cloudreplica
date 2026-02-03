@@ -46,16 +46,34 @@
         </select>
       </div>
 
-      <!-- UPDATED: Storage Type (polished UI with info button) -->
-      <div class="storage-type-wrap">
-        <label for="storageType">Storage Type</label>
-        <div class="input-with-info">
-          <select id="storageType">
-            <option value="hdd">HDD</option>
-            <option value="ssd">SSD</option>
-          </select>
-          <!-- Info button -->
-          <button type="button" class="info-btn" id="storageInfoBtn" aria-label="What are we comparing?">i</button>
+      <!-- UPDATED: Storage Type (label with inline info badge + floating tooltip) -->
+      <div>
+        <label for="storageType" class="label-with-info">
+          Storage Type
+          <button
+            type="button"
+            class="info-badge"
+            id="storageInfoBtn"
+            aria-label="Storage comparison info"
+            aria-expanded="false"
+            aria-controls="storageInfoTip">
+            i
+          </button>
+        </label>
+
+        <select id="storageType">
+          <option value="hdd">HDD</option>
+          <option value="ssd">SSD</option>
+        </select>
+
+        <!-- Floating tooltip (hidden by default; toggled by script.js) -->
+        <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
+          <div class="info-pop__arrow"></div>
+          <div class="info-pop__content">
+            <strong>Storage comparison</strong><br/>
+            • SSD → AWS: EBS General Purpose SSD (gp3), Azure: Standard SSD (E‑series)<br/>
+            • HDD → AWS: EBS Throughput Optimized HDD (st1), Azure: Standard HDD (S‑series)
+          </div>
         </div>
       </div>
       <!-- END updated Storage Type -->
@@ -90,14 +108,14 @@
       <p id="awsCpu">vCPU: –</p>
       <p id="awsRam">RAM: –</p>
 
-      <!-- NEW: show the chosen storage -->
+      <!-- show the chosen storage -->
       <p class="muted" id="awsStorageSel">Storage: –</p>
 
-      <!-- EXISTING: compute-only price -->
+      <!-- compute-only price -->
       <p id="awsPrice">Price/hr: –</p>
       <p id="awsMonthly">≈ Monthly: –</p>
 
-      <!-- NEW: storage-only pricing -->
+      <!-- storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="awsStoragePriceHr">–</span>
@@ -109,7 +127,7 @@
 
       <hr class="divider"/>
 
-      <!-- NEW: totals -->
+      <!-- totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="awsTotalHr">–</span>
@@ -140,14 +158,14 @@
       <p id="azCpu">vCPU: –</p>
       <p id="azRam">RAM: –</p>
 
-      <!-- NEW: show the chosen storage -->
+      <!-- show the chosen storage -->
       <p class="muted" id="azStorageSel">Storage: –</p>
 
-      <!-- EXISTING: compute-only price -->
+      <!-- compute-only price -->
       <p id="azPrice">Price/hr: –</p>
       <p id="azMonthly">≈ Monthly: –</p>
 
-      <!-- NEW: storage-only pricing -->
+      <!-- storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="azStoragePriceHr">–</span>
@@ -159,7 +177,7 @@
 
       <hr class="divider"/>
 
-      <!-- NEW: totals -->
+      <!-- totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="azTotalHr">–</span>
