@@ -25,14 +25,14 @@ h2 { text-align:center; margin:24px 0 12px; }
   display:flex; 
   flex-wrap:wrap; 
   gap:12px; 
-  align-items:flex-end;       /* <-- MAIN FIX */
+  align-items:flex-end; /* MAIN FIX */
 }
 
 label { 
   font-weight:600; 
   margin-right:4px; 
   display:block; 
-  margin-bottom:4px;          /* helps inputs align visually */
+  margin-bottom:4px;
 }
 
 /* Equal height for selects + button */
@@ -53,7 +53,7 @@ button {
   color:#fff; 
   border:none; 
   cursor:pointer; 
-  height:40px;                
+  height:40px;
   display:flex; 
   align-items:center; 
   justify-content:center; 
@@ -111,4 +111,91 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 .family-filter label {
   font-weight: 600;
   color: var(--text);
+}
+
+/* ======================================================
+   NEW: Storage Type info button + tooltip styling
+   ====================================================== */
+
+.input-with-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.info-btn:hover { 
+  background:#eef2ff; 
+  border-color:#94a3b8; 
+}
+
+/* Tooltip box */
+.info-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 280px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18);
+  font-size: 13px;
+  line-height: 1.35;
+  display: none;
+}
+
+.info-pop[aria-hidden="false"] { 
+  display: block; 
+}
+
+/* Tooltip arrow */
+.info-pop__arrow {
+  position: absolute;
+  top: -6px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  background: #111827;
+  transform: rotate(45deg);
+}
+
+.info-pop__content ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+
+.info-pop__content li { 
+  margin: 2px 0; 
+}
+
+@media (max-width: 520px) {
+  .info-pop { 
+    right: auto; 
+    left: 0; 
+  }
+  .info-pop__arrow { 
+    right: auto; 
+    left: 12px; 
+  }
 }
