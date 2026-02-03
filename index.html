@@ -68,8 +68,20 @@
     <!-- AWS Panel -->
     <div class="panel">
       <h3>AWS EC2</h3>
-      <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
 
+      <!-- NEW: FAMILY FILTER (initially hidden) -->
+      <div class="family-filter" id="awsFamilyWrap" style="display:none;">
+        <label for="awsFamily">Family</label>
+        <select id="awsFamily">
+          <option value="">Auto (Recommended)</option>
+          <option value="general">General</option>
+          <option value="compute">Compute</option>
+          <option value="memory">Memory</option>
+        </select>
+      </div>
+      <!-- END FAMILY FILTER -->
+
+      <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
       <p id="awsCpu">vCPU: –</p>
       <p id="awsRam">RAM: –</p>
 
@@ -106,8 +118,20 @@
     <!-- Azure Panel -->
     <div class="panel">
       <h3>Azure VM</h3>
-      <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
 
+      <!-- NEW: FAMILY FILTER (initially hidden) -->
+      <div class="family-filter" id="azFamilyWrap" style="display:none;">
+        <label for="azFamily">Family</label>
+        <select id="azFamily">
+          <option value="">Auto (Recommended)</option>
+          <option value="general">General</option>
+          <option value="compute">Compute</option>
+          <option value="memory">Memory</option>
+        </select>
+      </div>
+      <!-- END FAMILY FILTER -->
+
+      <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
       <p id="azCpu">vCPU: –</p>
       <p id="azRam">RAM: –</p>
 
