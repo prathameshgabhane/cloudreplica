@@ -20,15 +20,20 @@ h2 { text-align:center; margin:24px 0 12px; }
   box-shadow:var(--shadow); 
 }
 
-/* FIX: ensure vertical alignment of dropdowns + button */
+/* FIX: ensure PERFECT vertical alignment of dropdowns + button */
 .filters .row { 
   display:flex; 
   flex-wrap:wrap; 
   gap:12px; 
-  align-items:center; 
+  align-items:flex-end;       /* <-- MAIN FIX */
 }
 
-label { font-weight:600; margin-right:4px; display:block; }
+label { 
+  font-weight:600; 
+  margin-right:4px; 
+  display:block; 
+  margin-bottom:4px;          /* helps inputs align visually */
+}
 
 /* Equal height for selects + button */
 select { 
@@ -48,7 +53,7 @@ button {
   color:#fff; 
   border:none; 
   cursor:pointer; 
-  height:40px;                /* FIX: match select height */
+  height:40px;                
   display:flex; 
   align-items:center; 
   justify-content:center; 
