@@ -12583,6 +12583,13 @@
     },
     {
       "instance": "Standard_E32-8as_v5",
+      "pricePerHourUSD": 0.353645,
+      "region": "eastus",
+      "vcpu": null,
+      "ram": null
+    },
+    {
+      "instance": "Standard_E32-8as_v5",
       "pricePerHourUSD": 0.334118,
       "region": "eastus",
       "vcpu": null,
@@ -14124,13 +14131,6 @@
     {
       "instance": "Standard_M64bs_v3",
       "pricePerHourUSD": 1.031184,
-      "region": "eastus",
-      "vcpu": null,
-      "ram": null
-    },
-    {
-      "instance": "Standard_M128ms",
-      "pricePerHourUSD": 14.326,
       "region": "eastus",
       "vcpu": null,
       "ram": null
