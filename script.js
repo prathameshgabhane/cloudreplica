@@ -20,12 +20,30 @@ let STORAGE_CFG = {
 };
 
 // ============================================================
-// Bootstrapping dropdowns
+// Bootstrapping dropdowns (fail-safe + enhance from JSON)
 document.addEventListener("DOMContentLoaded", async () => {
+  // 1) FAIL-SAFE: show fallbacks immediately so the UI is never blank
+  fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
+  fillSelect("cpu",  [1, 2, 4, 8, 16].map(v => ({ value: v, text: v })));
+  fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v => ({ value: v, text: v })));
+  setSelectValue("os", "Linux");
+  setSelectValue("cpu", "2");
+  setSelectValue("ram", "4");
+
+  // Hooks that don’t depend on prices.json
+  ["awsFamily", "azFamily"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => compare());
+  });
+
+  // Initialize the non-blocking tooltip for the Storage Type info button
+  initStorageTypeTooltip();
+
+  // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
     const r = await fetch(API_BASE, { mode: "cors" });
-    const j = r.ok ? await r.json() : { meta: FALLBACK_META };
-    const meta = j.meta || FALLBACK_META;
+    const j = r.ok ? await r.json() : {};
+    const meta = j.meta;
 
     // pick up storage from file if present
     if (j.storage?.aws || j.storage?.azure) {
@@ -43,33 +61,24 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
     }
 
-    const osItems = Array.isArray(meta.os)
-      ? meta.os.map(x => (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
-      : FALLBACK_META.os.map(x => ({ value: x.value, text: x.value }));
+    if (meta) {
+      const osItems = Array.isArray(meta.os)
+        ? meta.os.map(x => (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
+        : [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }];
 
-    fillSelect("os",  osItems);
-    fillSelect("cpu", (meta.vcpu || FALLBACK_META.vcpu).map(v => ({ value: v, text: v })));
-    fillSelect("ram", (meta.ram  || FALLBACK_META.ram ).map(v => ({ value: v, text: v })));
+      fillSelect("os",  osItems);
+      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v => ({ value: v, text: v })));
+      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v => ({ value: v, text: v })));
+
+      setSelectValue("os", "Linux");
+      setSelectValue("cpu", "2");
+      setSelectValue("ram", "4");
+    }
   } catch {
-    fillSelect("os",   FALLBACK_META.os.map(x => ({ value: x.value, text: x.value })));
-    fillSelect("cpu",  FALLBACK_META.vcpu.map(v => ({ value: v, text: v })));
-    fillSelect("ram",  FALLBACK_META.ram.map(v => ({ value: v, text: v })));
+    // Leave fallbacks as-is
   }
 
-  setSelectValue("os", "Linux");
-  setSelectValue("cpu", "2");
-  setSelectValue("ram", "4");
-
-  // Auto re-compare when a family is changed (revealed after first compare)
-  ["awsFamily", "azFamily"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", () => compare());
-  });
-
-  // Initialize the non-blocking tooltip for the Storage Type info button
-  initStorageTypeTooltip();
-
-  // Show an initial comparison so the page isn't empty on load
+  // 3) Show an initial comparison so the page isn't empty on load
   compare();
 });
 
@@ -98,9 +107,13 @@ function monthly(ph) { return (ph == null || isNaN(ph)) ? null : ph * HRS_PER_MO
 function setStatus(msg, level="info") {
   const el = document.getElementById("status");
   if (!el) return;
+  // Use CSS var fallbacks so color still applies if --err/--warn not defined
+  const err  = "var(--err, #b91c1c)";
+  const warn = "var(--warn, #b45309)";
+  const mut  = "var(--muted, #666)";
   el.textContent = msg;
-  el.style.color = (level === "error") ? "var(--err)" :
-                   (level === "warn")  ? "var(--warn)" : "var(--muted)";
+  el.style.color = (level === "error") ? err :
+                   (level === "warn")  ? warn : mut;
 }
 
 function safeSetText(id, text) {
@@ -312,7 +325,6 @@ async function compare() {
   } catch (err) {
     console.error(err);
     setStatus(`Error: ${err.message}`, "error");
-    // FIXED: balanced quotes
     alert("Unable to read local prices. Please try again.");
   } finally {
     if (btn) btn.disabled = false;
