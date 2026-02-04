@@ -224,3 +224,27 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
     right: auto !important;
   }
 }
+
+/* ===============================================
+   FIX: Normalize all filter columns (label + field)
+   and eliminate Storage Type misalignment
+   =============================================== */
+.filters .row > div {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make ALL labels the same height – including inline 'i' badge label */
+label,
+.label-with-info {
+  margin-bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;        /* match the badge spacing */
+  line-height: 1.1;/* prevents taller label line on Storage Type */
+}
+
+/* Ensure the blue info badge does NOT increase label height */
+.label-with-info .info-badge {
+  align-self: center;
+}
