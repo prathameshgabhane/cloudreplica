@@ -8,12 +8,14 @@
   <!-- FIXED: correct stylesheet include -->
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <h2>Live Cloud Price Compare</h2>
 
   <div class="filters">
     <div class="row">
-      <!-- OS (UPDATED: label-with-info + OS tooltip) -->
+
+      <!-- OS with tooltip -->
       <div>
         <label for="os" class="label-with-info">
           OS
@@ -30,13 +32,12 @@
 
         <select id="os"></select>
 
-        <!-- Floating tooltip (hidden by default; toggled by script.js) -->
         <div class="info-pop" id="osInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
             <strong>OS selection</strong><br/>
-            • <em>Linux</em>: Uses standard Linux VM rates (no OS license fee).<br/>
-            • <em>Windows</em>: Uses Windows Server PAYG rates (license included).
+            • <em>Linux</em>: Standard Linux VM rates (no OS license).<br/>
+            • <em>Windows</em>: Windows PAYG (license included).
           </div>
         </div>
       </div>
@@ -53,7 +54,7 @@
         <select id="ram"></select>
       </div>
 
-      <!-- Storage (GB) -->
+      <!-- Storage Amount -->
       <div>
         <label for="storageAmt">Storage (GB)</label>
         <select id="storageAmt">
@@ -68,7 +69,7 @@
         </select>
       </div>
 
-      <!-- UPDATED: Storage Type (label with inline info badge + floating tooltip) -->
+      <!-- Storage Type with tooltip -->
       <div>
         <label for="storageType" class="label-with-info">
           Storage Type
@@ -88,33 +89,32 @@
           <option value="ssd">SSD</option>
         </select>
 
-        <!-- Floating tooltip (hidden by default; toggled by script.js) -->
         <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
             <strong>Storage comparison</strong><br/>
-            • SSD → AWS: EBS General Purpose SSD (gp3), Azure: Standard SSD (E‑series)<br/>
-            • HDD → AWS: EBS Throughput Optimized HDD (st1), Azure: Standard HDD (S‑series)
+            • SSD → AWS gp3, Azure Standard SSD<br/>
+            • HDD → AWS st1, Azure Standard HDD
           </div>
         </div>
       </div>
-      <!-- END updated Storage Type -->
 
-      <!-- Compare -->
+      <!-- Compare button -->
       <div>
-        <button id="compareBtn" onclick="compare()">Compare</button>
+        <button id="compareBtn" onclick="compare(true)">Compare</button>
       </div>
+
     </div>
 
     <div id="status" class="status">Ready</div>
   </div>
 
   <div class="results">
+
     <!-- AWS Panel -->
     <div class="panel">
       <h3>AWS EC2</h3>
 
-      <!-- FAMILY FILTER (initially hidden; shown after first compare) -->
       <div class="family-filter" id="awsFamilyWrap" style="display:none;">
         <label for="awsFamily">Family</label>
         <select id="awsFamily" aria-label="AWS family">
@@ -124,20 +124,16 @@
           <option value="memory">Memory</option>
         </select>
       </div>
-      <!-- END FAMILY FILTER -->
 
       <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
       <p id="awsCpu">vCPU: –</p>
       <p id="awsRam">RAM: –</p>
 
-      <!-- show the chosen storage -->
       <p class="muted" id="awsStorageSel">Storage: –</p>
 
-      <!-- compute-only price -->
       <p id="awsPrice">Price/hr: –</p>
       <p id="awsMonthly">≈ Monthly: –</p>
 
-      <!-- storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="awsStoragePriceHr">–</span>
@@ -149,7 +145,6 @@
 
       <hr class="divider"/>
 
-      <!-- totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="awsTotalHr">–</span>
@@ -164,7 +159,6 @@
     <div class="panel">
       <h3>Azure VM</h3>
 
-      <!-- FAMILY FILTER (initially hidden; shown after first compare) -->
       <div class="family-filter" id="azFamilyWrap" style="display:none;">
         <label for="azFamily">Family</label>
         <select id="azFamily" aria-label="Azure family">
@@ -174,20 +168,16 @@
           <option value="memory">Memory</option>
         </select>
       </div>
-      <!-- END FAMILY FILTER -->
 
       <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
       <p id="azCpu">vCPU: –</p>
       <p id="azRam">RAM: –</p>
 
-      <!-- show the chosen storage -->
       <p class="muted" id="azStorageSel">Storage: –</p>
 
-      <!-- compute-only price -->
       <p id="azPrice">Price/hr: –</p>
       <p id="azMonthly">≈ Monthly: –</p>
 
-      <!-- storage-only pricing -->
       <div class="split">
         <span class="label">Storage Price/hr:</span>
         <span id="azStoragePriceHr">–</span>
@@ -199,7 +189,6 @@
 
       <hr class="divider"/>
 
-      <!-- totals -->
       <div class="split total">
         <span class="label">Total Price/hr:</span>
         <span id="azTotalHr">–</span>
@@ -209,9 +198,11 @@
         <span id="azTotalMonthly">–</span>
       </div>
     </div>
+
   </div>
 
   <!-- FIXED: correct script include -->
   <script src="script.js"></script>
+
 </body>
 </html>
