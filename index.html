@@ -13,10 +13,32 @@
 
   <div class="filters">
     <div class="row">
-      <!-- OS -->
+      <!-- OS (UPDATED: label-with-info + OS tooltip) -->
       <div>
-        <label for="os">OS</label>
+        <label for="os" class="label-with-info">
+          OS
+          <button
+            type="button"
+            class="info-badge"
+            id="osInfoBtn"
+            aria-label="OS selection info"
+            aria-expanded="false"
+            aria-controls="osInfoTip">
+            i
+          </button>
+        </label>
+
         <select id="os"></select>
+
+        <!-- Floating tooltip (hidden by default; toggled by script.js) -->
+        <div class="info-pop" id="osInfoTip" role="tooltip" aria-hidden="true">
+          <div class="info-pop__arrow"></div>
+          <div class="info-pop__content">
+            <strong>OS selection</strong><br/>
+            • <em>Linux</em>: Uses standard Linux VM rates (no OS license fee).<br/>
+            • <em>Windows</em>: Uses Windows Server PAYG rates (license included).
+          </div>
+        </div>
       </div>
 
       <!-- vCPU -->
