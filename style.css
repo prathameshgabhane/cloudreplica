@@ -118,32 +118,6 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   min-width: 180px;            /* keeps a good baseline width */
 }
 
-/* ===============================================
-   Per-card "Reset to Auto" buttons (link-style)
-   =============================================== */
-button.btn-link {
-  /* override the global `button` rule above */
-  background: transparent;
-  color: var(--primary);
-  border: none;
-  padding: 0;
-  height: auto;                /* don't force 40px height */
-  display: inline;             /* look like a link */
-  line-height: 1.2;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-button.btn-link:hover {
-  text-decoration: none;
-}
-
-button.btn-link:focus-visible {
-  outline: 2px solid #93c5fd;  /* accessible focus */
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
 /* ======================================================
    Storage Type / OS info patterns (badges + tooltip)
    ====================================================== */
