@@ -114,7 +114,7 @@
     <div class="panel">
       <h3>AWS EC2</h3>
 
-      <!-- NEW: FAMILY FILTER (initially hidden) -->
+      <!-- FAMILY FILTER (initially hidden; shown after first compare) -->
       <div class="family-filter" id="awsFamilyWrap" style="display:none;">
         <label for="awsFamily">Family</label>
         <select id="awsFamily" aria-label="AWS family">
@@ -123,10 +123,6 @@
           <option value="compute">Compute</option>
           <option value="memory">Memory</option>
         </select>
-        <!-- ADDED: Per-card reset button -->
-        <button id="awsFamilyReset" type="button" class="btn-link" aria-label="Reset AWS family to Auto">
-          Reset to Auto
-        </button>
       </div>
       <!-- END FAMILY FILTER -->
 
@@ -168,7 +164,7 @@
     <div class="panel">
       <h3>Azure VM</h3>
 
-      <!-- NEW: FAMILY FILTER (initially hidden) -->
+      <!-- FAMILY FILTER (initially hidden; shown after first compare) -->
       <div class="family-filter" id="azFamilyWrap" style="display:none;">
         <label for="azFamily">Family</label>
         <select id="azFamily" aria-label="Azure family">
@@ -177,10 +173,6 @@
           <option value="compute">Compute</option>
           <option value="memory">Memory</option>
         </select>
-        <!-- ADDED: Per-card reset button -->
-        <button id="azFamilyReset" type="button" class="btn-link" aria-label="Reset Azure family to Auto">
-          Reset to Auto
-        </button>
       </div>
       <!-- END FAMILY FILTER -->
 
