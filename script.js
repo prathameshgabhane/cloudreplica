@@ -40,11 +40,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initStorageTypeTooltip();
   initOsTypeTooltip();
 
-  // OPTIONAL: If you prefer not to use inline onclick in HTML,
-  // uncomment below and remove onclick from HTML:
-  // const btn = document.getElementById("compareBtn");
-  // if (btn) btn.addEventListener("click", () => compare(true));
-
   // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
     const r = await fetch(API_BASE, { mode: "cors" });
@@ -151,6 +146,30 @@ function resetFamilyFilters() {
   const azW  = document.getElementById("azFamilyWrap");
   if (awsW) awsW.style.display = "none";
   if (azW)  azW.style.display  = "none";
+}
+
+// ---------- Family membership tests (client-side) ----------
+function isAwsInFamily(inst, family) {
+  if (!family) return true; // Auto
+  const s = String(inst || "").toLowerCase();
+  if (family === "general")  return /^[mt]/.test(s);       // t*, m*
+  if (family === "compute")  return /^c/.test(s);          // c*
+  if (family === "memory")   return /^[rxz]/.test(s);      // r*, x*, z*
+  return true;
+}
+function isAzureInFamily(inst, family) {
+  if (!family) return true; // Auto
+  const n = String(inst || "").toLowerCase();
+  let first = null;
+  const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -> "d4s..."
+  if (m && m[1] && m[1].length) first = m[1][0];
+  else first = n[0] || null;
+  if (!first) return true;
+
+  if (family === "general")  return first === "d" || first === "b"; // D/B
+  if (family === "compute")  return first === "f";                  // F
+  if (family === "memory")   return first === "e" || first === "m"; // E/M
+  return true;
 }
 
 // ============================================================
@@ -277,11 +296,9 @@ async function compare(resetFamilies = false) {
     }
 
     // ---------- Render Storage Prices ----------
-    // AWS storage lines
     safeSetText("awsStoragePriceHr", fmt(awsStorageHr));
     safeSetText("awsStorageMonthly", fmt(awsStorageMonthly));
 
-    // Azure storage lines (include SKU if we mapped to a different size)
     safeSetText("azStoragePriceHr", fmt(azStorageHr));
     safeSetText("azStorageMonthly", fmt(azStorageMonthly));
     if (azDiskSku) {
@@ -328,20 +345,18 @@ function initStorageTypeTooltip() {
   const select = document.getElementById("storageType");
   if (!btn || !tip || !label || !select) return;
 
-  // Place the bubble just below the Storage Type select
   function positionTip() {
     const rect = select.getBoundingClientRect();
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
 
     const left = rect.left + scrollX;
-    const top  = rect.bottom + scrollY + 6; // small gap below select
+    const top  = rect.bottom + scrollY + 6;
 
     tip.style.position = "absolute";
     tip.style.left = `${left}px`;
     tip.style.top  = `${top}px`;
 
-    // Move arrow to roughly align under the i badge
     const arrow = tip.querySelector(".info-pop__arrow");
     if (arrow) {
       const btnRect = btn.getBoundingClientRect();
@@ -390,7 +405,6 @@ function initStorageTypeTooltip() {
     }
   });
 
-  // Reposition while open on resize/scroll
   window.addEventListener("resize", () => {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
@@ -404,19 +418,16 @@ function initStorageTypeTooltip() {
 function initOsTypeTooltip() {
   const btn    = document.getElementById("osInfoBtn");
   const tip    = document.getElementById("osInfoTip");
-  // Be tolerant: if the label doesn't have .label-with-info yet, fall back to plain [for="os"]
   let label    = document.querySelector('label[for="os"].label-with-info')
               || document.querySelector('label[for="os"]');
   const select = document.getElementById("os");
 
-  // Guard & log (so we can see what's missing in DevTools if it fails again)
   if (!btn || !tip || !label || !select) {
     console.warn("[initOsTypeTooltip] Missing elements:",
       { btn: !!btn, tip: !!tip, label: !!label, select: !!select });
     return;
   }
 
-  // Prefer anchoring to the label; fall back to select if needed
   function getAnchorRect() {
     const anchor = label || select;
     return anchor.getBoundingClientRect();
@@ -471,7 +482,6 @@ function initOsTypeTooltip() {
     if (e.key === "Escape") closeTip();
   }
 
-  // Open/close by click or keyboard on the badge
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleTip();
@@ -483,7 +493,6 @@ function initOsTypeTooltip() {
     }
   });
 
-  // Reposition while open on resize/scroll
   window.addEventListener("resize", () => {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
