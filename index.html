@@ -117,12 +117,16 @@
       <!-- NEW: FAMILY FILTER (initially hidden) -->
       <div class="family-filter" id="awsFamilyWrap" style="display:none;">
         <label for="awsFamily">Family</label>
-        <select id="awsFamily">
+        <select id="awsFamily" aria-label="AWS family">
           <option value="">Auto (Recommended)</option>
           <option value="general">General</option>
           <option value="compute">Compute</option>
           <option value="memory">Memory</option>
         </select>
+        <!-- ADDED: Per-card reset button -->
+        <button id="awsFamilyReset" type="button" class="btn-link" aria-label="Reset AWS family to Auto">
+          Reset to Auto
+        </button>
       </div>
       <!-- END FAMILY FILTER -->
 
@@ -167,12 +171,16 @@
       <!-- NEW: FAMILY FILTER (initially hidden) -->
       <div class="family-filter" id="azFamilyWrap" style="display:none;">
         <label for="azFamily">Family</label>
-        <select id="azFamily">
+        <select id="azFamily" aria-label="Azure family">
           <option value="">Auto (Recommended)</option>
           <option value="general">General</option>
           <option value="compute">Compute</option>
           <option value="memory">Memory</option>
         </select>
+        <!-- ADDED: Per-card reset button -->
+        <button id="azFamilyReset" type="button" class="btn-link" aria-label="Reset Azure family to Auto">
+          Reset to Auto
+        </button>
       </div>
       <!-- END FAMILY FILTER -->
 
