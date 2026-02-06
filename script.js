@@ -33,12 +33,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Hooks that don’t depend on prices.json
   ["awsFamily", "azFamily"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener("change", () => compare());
+    if (el) el.addEventListener("change", () => compare(false));  // keep current selection
   });
 
   // Initialize tooltips
   initStorageTypeTooltip();
-  initOsTypeTooltip(); // <-- hardened OS tooltip
+  initOsTypeTooltip();
+
+  // OPTIONAL: If you prefer not to use inline onclick in HTML,
+  // uncomment below and remove onclick from HTML:
+  // const btn = document.getElementById("compareBtn");
+  // if (btn) btn.addEventListener("click", () => compare(true));
 
   // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
@@ -80,7 +85,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // 3) Show an initial comparison so the page isn't empty on load
-  compare();
+  compare(false);
 });
 
 // ============================================================
@@ -148,36 +153,20 @@ function resetFamilyFilters() {
   if (azW)  azW.style.display  = "none";
 }
 
-// ---------- Family membership tests (client-side) ----------
-function isAwsInFamily(inst, family) {
-  if (!family) return true; // Auto
-  const s = String(inst || "").toLowerCase();
-  if (family === "general")  return /^[mt]/.test(s);       // t*, m*
-  if (family === "compute")  return /^c/.test(s);          // c*
-  if (family === "memory")   return /^[rxz]/.test(s);      // r*, x*, z*
-  return true;
-}
-function isAzureInFamily(inst, family) {
-  if (!family) return true; // Auto
-  const n = String(inst || "").toLowerCase();
-  let first = null;
-  const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -> "d4s..."
-  if (m && m[1] && m[1].length) first = m[1][0];
-  else first = n[0] || null;
-  if (!first) return true;
-
-  if (family === "general")  return first === "d" || first === "b"; // D/B
-  if (family === "compute")  return first === "f";                  // F
-  if (family === "memory")   return first === "e" || first === "m"; // E/M
-  return true;
-}
-
 // ============================================================
 // ---------- Compare using local prices.json ----------
-async function compare() {
+async function compare(resetFamilies = false) {
   const btn = document.getElementById("compareBtn");
   if (btn) btn.disabled = true;
   setStatus("Fetching local prices…");
+
+  // If the Compare button explicitly asked for a reset, set families to Auto ("")
+  if (resetFamilies) {
+    const awsSel = document.getElementById("awsFamily");
+    const azSel  = document.getElementById("azFamily");
+    if (awsSel) awsSel.value = "";
+    if (azSel)  azSel.value  = "";
+  }
 
   const os           = document.getElementById("os")?.value || "Linux";
   const vcpu         = Number(document.getElementById("cpu")?.value ?? 0);
@@ -185,7 +174,7 @@ async function compare() {
   const storageType  = (document.getElementById("storageType")?.value || "hdd").toLowerCase(); // 'ssd' | 'hdd'
   const storageAmtGB = Number(document.getElementById("storageAmt")?.value ?? 0);
 
-  // Family selections ('' = Auto)
+  // Family selections ('' = Auto). These reflect the final values after the optional reset above.
   const familyAws = document.getElementById("awsFamily")?.value || "";
   const familyAz  = document.getElementById("azFamily")?.value  || "";
 
@@ -317,7 +306,7 @@ async function compare() {
     safeSetText("azTotalHr",      fmt(azTotalHr));
     safeSetText("azTotalMonthly", fmt(azTotalMonthly));
 
-    // Reveal family filters after first comparison (and keep them visible)
+    // Reveal family filters after first comparison (keep visible afterwards)
     showFamilyFilters();
 
     setStatus("Comparison complete ✓");
@@ -585,7 +574,6 @@ function resetCards() {
   safeSetText("azTotalMonthly",     "—");
 
   // NOTE: Do NOT hide or reset the family selects here — let the user’s choice persist
-  // (We keep family rows visible once shown via showFamilyFilters() after first compare)
 }
 
 // ============================================================
