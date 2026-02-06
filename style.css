@@ -106,6 +106,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   gap: 8px;
   align-items: center;
   margin: 8px 0 10px;
+  flex-wrap: wrap;             /* allow wrapping on small screens */
 }
 
 .family-filter label {
@@ -113,8 +114,38 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   color: var(--text);
 }
 
+.family-filter select {
+  min-width: 180px;            /* keeps a good baseline width */
+}
+
+/* ===============================================
+   Per-card "Reset to Auto" buttons (link-style)
+   =============================================== */
+button.btn-link {
+  /* override the global `button` rule above */
+  background: transparent;
+  color: var(--primary);
+  border: none;
+  padding: 0;
+  height: auto;                /* don't force 40px height */
+  display: inline;             /* look like a link */
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+button.btn-link:hover {
+  text-decoration: none;
+}
+
+button.btn-link:focus-visible {
+  outline: 2px solid #93c5fd;  /* accessible focus */
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* ======================================================
-   Storage Type info patterns
+   Storage Type / OS info patterns (badges + tooltip)
    ====================================================== */
 
 /* (legacy) Inline input + button wrapper — safe to keep if used elsewhere */
@@ -182,7 +213,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   outline: none;
 }
 
-/* --- Floating tooltip bubble for the Storage Type info --- */
+/* --- Floating tooltip bubble for the info --- */
 .info-pop {
   position: absolute;
   margin-top: 6px;              /* gap from anchor (label/select) */
@@ -191,7 +222,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
   max-width: 360px;
   padding: 12px 14px;
   border-radius: 4px;
-  background: #2b2b2b;          /* dark bubble (matches your ref) */
+  background: #2b2b2b;          /* dark bubble */
   color: #fff;
   box-shadow: 0 8px 20px rgba(0,0,0,.18);
   font-size: 14px;
@@ -200,7 +231,7 @@ button:disabled { background:#9fbef2; cursor:not-allowed; }
 }
 .info-pop[aria-hidden="false"] { display: block; }
 
-/* Bubble arrow (on left, like your example) */
+/* Bubble arrow */
 .info-pop__arrow {
   position: absolute;
   top: -6px;
@@ -240,8 +271,8 @@ label,
   margin-bottom: 4px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;        /* match the badge spacing */
-  line-height: 1.1;/* prevents taller label line on Storage Type */
+  gap: 6px;         /* match the badge spacing */
+  line-height: 1.1; /* prevents taller label line on Storage Type */
 }
 
 /* Ensure the blue info badge does NOT increase label height */
