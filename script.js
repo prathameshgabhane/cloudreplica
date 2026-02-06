@@ -21,24 +21,24 @@ let STORAGE_CFG = {
 
 // ============================================================
 // Bootstrapping dropdowns (fail-safe + enhance from JSON)
-document.addEventListener("DOMContentLoaded", async () =&gt; {
+document.addEventListener("DOMContentLoaded", async () =&amp;gt; {
   // 1) FAIL-SAFE: show fallbacks immediately so the UI is never blank
   fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
-  fillSelect("cpu",  [1, 2, 4, 8, 16].map(v =&gt; ({ value: v, text: v })));
-  fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v =&gt; ({ value: v, text: v })));
+  fillSelect("cpu",  [1, 2, 4, 8, 16].map(v =&amp;gt; ({ value: v, text: v })));
+  fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v =&amp;gt; ({ value: v, text: v })));
   setSelectValue("os", "Linux");
   setSelectValue("cpu", "2");
   setSelectValue("ram", "4");
 
   // Hooks that don’t depend on prices.json
-  ["awsFamily", "azFamily"].forEach(id =&gt; {
+  ["awsFamily", "azFamily"].forEach(id =&amp;gt; {
     const el = document.getElementById(id);
-    if (el) el.addEventListener("change", () =&gt; compare());
+    if (el) el.addEventListener("change", () =&amp;gt; compare());
   });
 
   // Initialize tooltips
   initStorageTypeTooltip();
-  initOsTypeTooltip(); // &lt;-- NEW: OS tooltip
+  initOsTypeTooltip(); // &lt;-- NEW: hardened OS tooltip
 
   // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
@@ -64,12 +64,12 @@ document.addEventListener("DOMContentLoaded", async () =&gt; {
 
     if (meta) {
       const osItems = Array.isArray(meta.os)
-        ? meta.os.map(x =&gt; (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
+        ? meta.os.map(x =&amp;gt; (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
         : [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }];
 
       fillSelect("os",  osItems);
-      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v =&gt; ({ value: v, text: v })));
-      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v =&gt; ({ value: v, text: v })));
+      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v =&amp;gt; ({ value: v, text: v })));
+      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v =&amp;gt; ({ value: v, text: v })));
 
       setSelectValue("os", "Linux");
       setSelectValue("cpu", "2");
@@ -99,7 +99,7 @@ function fillSelect(id, items) {
 function setSelectValue(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
-  const match = Array.from(el.options).find(o =&gt; o.value == value);
+  const match = Array.from(el.options).find(o =&amp;gt; o.value == value);
   if (match) el.value = value;
 }
 function fmt(n)      { return (n == null || isNaN(n)) ? "—" : `$${Number(n).toFixed(4)}`; }
@@ -128,7 +128,7 @@ function appendToText(id, extra) {
 function sumSafe(a, b) {
   const na = (a == null || isNaN(a)) ? 0 : Number(a);
   const nb = (b == null || isNaN(b)) ? 0 : Number(b);
-  if (a == null &amp;&amp; b == null) return null;
+  if (a == null &amp;amp;&amp;amp; b == null) return null;
   return na + nb;
 }
 
@@ -164,7 +164,7 @@ function isAzureInFamily(inst, family) {
   const n = String(inst || "").toLowerCase();
   let first = null;
   const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -&gt; "d4s..."
-  if (m &amp;&amp; m[1] &amp;&amp; m[1].length) first = m[1][0];
+  if (m &amp;amp;&amp;amp; m[1] &amp;amp;&amp;amp; m[1].length) first = m[1][0];
   else first = n[0] || null;
   if (!first) return true;
 
@@ -263,11 +263,11 @@ async function compare() {
     if (!awsCard || awsCard.error) {
       const awsInst = document.getElementById("awsInstance");
       if (awsInst) awsInst.innerHTML =
-        `&lt;strong&gt;Recommended Instance:&lt;/strong&gt; Error: ${awsCard?.error ?? "No match"}`;
+        `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; Error: ${awsCard?.error ?? "No match"}`;
     } else {
       const awsInst = document.getElementById("awsInstance");
       if (awsInst) awsInst.innerHTML =
-        `&lt;strong&gt;Recommended Instance:&lt;/strong&gt; ${awsCard.instance} (${awsCard.region})`;
+        `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; ${awsCard.instance} (${awsCard.region})`;
       safeSetText("awsCpu",     `vCPU: ${awsCard.vcpu}`);
       safeSetText("awsRam",     `RAM: ${awsCard.ram} GB`);
       safeSetText("awsPrice",   `Price/hr: ${fmt(awsCard.pricePerHourUSD)}`);
@@ -278,11 +278,11 @@ async function compare() {
     if (!azCard || azCard.error) {
       const azInst = document.getElementById("azInstance");
       if (azInst) azInst.innerHTML =
-        `&lt;strong&gt;Recommended VM Size:&lt;/strong&gt; Error: ${azCard?.error ?? "No match"}`;
+        `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; Error: ${azCard?.error ?? "No match"}`;
     } else {
       const azInst = document.getElementById("azInstance");
       if (azInst) azInst.innerHTML =
-        `&lt;strong&gt;Recommended VM Size:&lt;/strong&gt; ${azCard.instance} (${azCard.region})`;
+        `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; ${azCard.instance} (${azCard.region})`;
       safeSetText("azCpu",     `vCPU: ${azCard.vcpu}`);
       safeSetText("azRam",     `RAM: ${azCard.ram} GB`);
       safeSetText("azPrice",   `Price/hr: ${fmt(azCard.pricePerHourUSD)}`);
@@ -298,7 +298,7 @@ async function compare() {
     safeSetText("azStoragePriceHr", fmt(azStorageHr));
     safeSetText("azStorageMonthly", fmt(azStorageMonthly));
     if (azDiskSku) {
-      const extra = (azDiskGB &amp;&amp; azDiskGB !== storageAmtGB)
+      const extra = (azDiskGB &amp;amp;&amp;amp; azDiskGB !== storageAmtGB)
         ? ` (billed as ${azDiskGB} GB ${storageType.toUpperCase()}, ${azDiskSku})`
         : ` (${azDiskSku})`;
       appendToText("azStorageSel", extra);
@@ -392,11 +392,11 @@ function initStorageTypeTooltip() {
     if (e.key === "Escape") closeTip();
   }
 
-  btn.addEventListener("click", (e) =&gt; {
+  btn.addEventListener("click", (e) =&amp;gt; {
     e.stopPropagation();
     toggleTip();
   });
-  btn.addEventListener("keydown", (e) =&gt; {
+  btn.addEventListener("keydown", (e) =&amp;gt; {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       toggleTip();
@@ -404,10 +404,10 @@ function initStorageTypeTooltip() {
   });
 
   // Reposition while open on resize/scroll
-  window.addEventListener("resize", () =&gt; {
+  window.addEventListener("resize", () =&amp;gt; {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
-  window.addEventListener("scroll", () =&gt; {
+  window.addEventListener("scroll", () =&amp;gt; {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
 }
@@ -415,14 +415,28 @@ function initStorageTypeTooltip() {
 // ============================================================
 // ---------- OS Type tooltip (non-blocking bubble) ----------
 function initOsTypeTooltip() {
-  const btn = document.getElementById("osInfoBtn");
-  const tip = document.getElementById("osInfoTip");
-  const label = document.querySelector('label[for="os"].label-with-info');
+  const btn    = document.getElementById("osInfoBtn");
+  const tip    = document.getElementById("osInfoTip");
+  // Be tolerant: if the label doesn't have .label-with-info yet, fall back to plain [for="os"]
+  let label    = document.querySelector('label[for="os"].label-with-info')
+              || document.querySelector('label[for="os"]');
   const select = document.getElementById("os");
-  if (!btn || !tip || !label || !select) return;
+
+  // Guard & log (so we can see what's missing in DevTools if it fails again)
+  if (!btn || !tip || !label || !select) {
+    console.warn("[initOsTypeTooltip] Missing elements:",
+      { btn: !!btn, tip: !!tip, label: !!label, select: !!select });
+    return;
+  }
+
+  // Prefer anchoring to the label; fall back to select if needed
+  function getAnchorRect() {
+    const anchor = label || select;
+    return anchor.getBoundingClientRect();
+  }
 
   function positionTip() {
-    const rect = select.getBoundingClientRect();
+    const rect   = getAnchorRect();
     const scrollX = window.scrollX || window.pageXOffset;
     const scrollY = window.scrollY || window.pageYOffset;
 
@@ -470,21 +484,23 @@ function initOsTypeTooltip() {
     if (e.key === "Escape") closeTip();
   }
 
-  btn.addEventListener("click", (e) =&gt; {
+  // Open/close by click or keyboard on the badge
+  btn.addEventListener("click", (e) =&amp;gt; {
     e.stopPropagation();
     toggleTip();
   });
-  btn.addEventListener("keydown", (e) =&gt; {
+  btn.addEventListener("keydown", (e) =&amp;gt; {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       toggleTip();
     }
   });
 
-  window.addEventListener("resize", () =&gt; {
+  // Reposition while open on resize/scroll
+  window.addEventListener("resize", () =&amp;gt; {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
-  window.addEventListener("scroll", () =&gt; {
+  window.addEventListener("scroll", () =&amp;gt; {
     if (tip.getAttribute("aria-hidden") === "false") positionTip();
   });
 }
@@ -494,16 +510,16 @@ function initOsTypeTooltip() {
 
 // AWS: per-GB-month → monthly
 function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
-  if (!isFinite(gb) || gb &lt;= 0) return null;
+  if (!isFinite(gb) || gb &amp;lt;= 0) return null;
   const t = (type || "hdd").toLowerCase();
   if (t === "ssd") return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
   return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
 }
 
-// Azure: map (type, gb) → SKU &amp; monthly price (rounded up to nearest supported size)
+// Azure: map (type, gb) → SKU &amp;amp; monthly price (rounded up to nearest supported size)
 function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
   const t = (type || "hdd").toLowerCase();
-  if (!isFinite(gb) || gb &lt;= 0) return { sku: null, size: null, monthlyUSD: null };
+  if (!isFinite(gb) || gb &amp;lt;= 0) return { sku: null, size: null, monthlyUSD: null };
 
   const ssdTbl = azCfg?.ssd_monthly || {};
   const hddTbl = azCfg?.hdd_monthly || {};
@@ -522,8 +538,8 @@ function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
 }
 
 function nearestCeil(requested, allowedSizes) {
-  const sorted = [...allowedSizes].sort((a,b) =&gt; a - b);
-  for (const s of sorted) if (requested &lt;= s) return s;
+  const sorted = [...allowedSizes].sort((a,b) =&amp;gt; a - b);
+  for (const s of sorted) if (requested &amp;lt;= s) return s;
   return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
@@ -544,9 +560,9 @@ function sizeToAzureSku(type, size) {
 // ---------- Reset cards ----------
 function resetCards() {
   const awsInst = document.getElementById("awsInstance");
-  if (awsInst) awsInst.innerHTML = `&lt;strong&gt;Recommended Instance:&lt;/strong&gt; …`;
+  if (awsInst) awsInst.innerHTML = `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; …`;
   const azInst  = document.getElementById("azInstance");
-  if (azInst)  azInst.innerHTML  = `&lt;strong&gt;Recommended VM Size:&lt;/strong&gt; …`;
+  if (azInst)  azInst.innerHTML  = `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; …`;
 
   safeSetText("awsCpu",      "vCPU: …");
   safeSetText("awsRam",      "RAM: …");
@@ -580,11 +596,11 @@ function findBestAws(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0) throw new Error("AWS price list is empty");
 
   const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
-  const filtered = list.filter(x =&gt;
-    isFinite(x.vcpu) &amp;&amp;
-    isFinite(x.ram) &amp;&amp;
-    isFinite(x.pricePerHourUSD) &amp;&amp;
-    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;&amp;
+  const filtered = list.filter(x =&amp;gt;
+    isFinite(x.vcpu) &amp;amp;&amp;amp;
+    isFinite(x.ram) &amp;amp;&amp;amp;
+    isFinite(x.pricePerHourUSD) &amp;amp;&amp;amp;
+    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;amp;&amp;amp;
     isAwsInFamily(x.instance, family)
   );
   if (filtered.length === 0) {
@@ -597,7 +613,7 @@ function findBestAws(list, vcpu, ram, os, family) {
   for (const x of filtered) {
     const score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
     const tieBreaker = x.pricePerHourUSD || Infinity;
-    if (score &lt; bestScore || (score === bestScore &amp;&amp; tieBreaker &lt; (best?.pricePerHourUSD ?? Infinity))) {
+    if (score &amp;lt; bestScore || (score === bestScore &amp;amp;&amp;amp; tieBreaker &amp;lt; (best?.pricePerHourUSD ?? Infinity))) {
       best = x;
       bestScore = score;
     }
@@ -609,8 +625,8 @@ function findBestAzure(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0) throw new Error("Azure price list is empty");
 
   const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
-  const pre = list.filter(x =&gt;
-    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;&amp;
+  const pre = list.filter(x =&amp;gt;
+    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;amp;&amp;amp;
     isAzureInFamily(x.instance, family)
   );
   if (pre.length === 0) {
@@ -619,7 +635,7 @@ function findBestAzure(list, vcpu, ram, os, family) {
   }
 
   // Enrich with heuristics for missing vCPU/RAM
-  const enriched = pre.map(x =&gt; {
+  const enriched = pre.map(x =&amp;gt; {
     const meta = inferAzureCoresRamFromName(x.instance);
     return {
       ...x,
@@ -632,14 +648,14 @@ function findBestAzure(list, vcpu, ram, os, family) {
   let bestScore = Infinity;
   for (const x of enriched) {
     let score;
-    if (isFinite(x.vcpu) &amp;&amp; isFinite(x.ram)) {
+    if (isFinite(x.vcpu) &amp;amp;&amp;amp; isFinite(x.ram)) {
       score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
     } else {
       const price = Number(x.pricePerHourUSD) || Infinity;
       score = 500 + price; // prefer known-spec SKUs
     }
     const tieBreaker = Number(x.pricePerHourUSD) || Infinity;
-    if (score &lt; bestScore || (score === bestScore &amp;&amp; tieBreaker &lt; (best?.pricePerHourUSD ?? Infinity))) {
+    if (score &amp;lt; bestScore || (score === bestScore &amp;amp;&amp;amp; tieBreaker &amp;lt; (best?.pricePerHourUSD ?? Infinity))) {
       best = x;
       bestScore = score;
     }
@@ -666,6 +682,6 @@ function inferAzureCoresRamFromName(name) {
   else if (n.startsWith("standard_b")) familyRamPerCore = 4;
   else if (n.startsWith("standard_m")) familyRamPerCore = 16; // rough fallback for M
 
-  const ram = (vcpu &amp;&amp; familyRamPerCore) ? vcpu * familyRamPerCore : null;
+  const ram = (vcpu &amp;amp;&amp;amp; familyRamPerCore) ? vcpu * familyRamPerCore : null;
   return { vcpu, ram };
 }
