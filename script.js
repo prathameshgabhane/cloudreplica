@@ -21,24 +21,24 @@ let STORAGE_CFG = {
 
 // ============================================================
 // Bootstrapping dropdowns (fail-safe + enhance from JSON)
-document.addEventListener("DOMContentLoaded", async () =&amp;gt; {
+document.addEventListener("DOMContentLoaded", async () => {
   // 1) FAIL-SAFE: show fallbacks immediately so the UI is never blank
   fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
-  fillSelect("cpu",  [1, 2, 4, 8, 16].map(v =&amp;gt; ({ value: v, text: v })));
-  fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v =&amp;gt; ({ value: v, text: v })));
+  fillSelect("cpu",  [1, 2, 4, 8, 16].map(v => ({ value: v, text: v })));
+  fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v => ({ value: v, text: v })));
   setSelectValue("os", "Linux");
   setSelectValue("cpu", "2");
   setSelectValue("ram", "4");
 
   // Hooks that don’t depend on prices.json
-  ["awsFamily", "azFamily"].forEach(id =&amp;gt; {
+  ["awsFamily", "azFamily"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener("change", () =&amp;gt; compare());
+    if (el) el.addEventListener("change", () => compare());
   });
 
   // Initialize tooltips
   initStorageTypeTooltip();
-  initOsTypeTooltip(); // &lt;-- NEW: hardened OS tooltip
+  initOsTypeTooltip(); // OS tooltip
 
   // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
@@ -64,12 +64,12 @@ document.addEventListener("DOMContentLoaded", async () =&amp;gt; {
 
     if (meta) {
       const osItems = Array.isArray(meta.os)
-        ? meta.os.map(x =&amp;gt; (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
+        ? meta.os.map(x => (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
         : [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }];
 
       fillSelect("os",  osItems);
-      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v =&amp;gt; ({ value: v, text: v })));
-      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v =&amp;gt; ({ value: v, text: v })));
+      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v => ({ value: v, text: v })));
+      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v => ({ value: v, text: v })));
 
       setSelectValue("os", "Linux");
       setSelectValue("cpu", "2");
@@ -99,7 +99,7 @@ function fillSelect(id, items) {
 function setSelectValue(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
-  const match = Array.from(el.options).find(o =&amp;gt; o.value == value);
+  const match = Array.from(el.options).find(o => o.value == value);
   if (match) el.value = value;
 }
 function fmt(n)      { return (n == null || isNaN(n)) ? "—" : `$${Number(n).toFixed(4)}`; }
@@ -128,7 +128,7 @@ function appendToText(id, extra) {
 function sumSafe(a, b) {
   const na = (a == null || isNaN(a)) ? 0 : Number(a);
   const nb = (b == null || isNaN(b)) ? 0 : Number(b);
-  if (a == null &amp;amp;&amp;amp; b == null) return null;
+  if (a == null && b == null) return null;
   return na + nb;
 }
 
@@ -163,8 +163,8 @@ function isAzureInFamily(inst, family) {
   if (!family) return true; // Auto
   const n = String(inst || "").toLowerCase();
   let first = null;
-  const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -&gt; "d4s..."
-  if (m &amp;amp;&amp;amp; m[1] &amp;amp;&amp;amp; m[1].length) first = m[1][0];
+  const m = n.match(/standard_([a-z]+)/);  // e.g., "standard_d4s_v5" -> "d4s..."
+  if (m && m[1] && m[1].length) first = m[1][0];
   else first = n[0] || null;
   if (!first) return true;
 
@@ -240,448 +240,3 @@ async function compare() {
         aws: {
           region: data.storage?.aws?.region ?? STORAGE_CFG.aws.region,
           ssd_per_gb_month: Number(data.storage?.aws?.ssd_per_gb_month ?? STORAGE_CFG.aws.ssd_per_gb_month),
-          hdd_st1_per_gb_month: Number(data.storage?.aws?.hdd_st1_per_gb_month ?? STORAGE_CFG.aws.hdd_st1_per_gb_month),
-        },
-        azure: {
-          region: data.storage?.azure?.region ?? STORAGE_CFG.azure.region,
-          ssd_monthly: data.storage?.azure?.ssd_monthly ?? STORAGE_CFG.azure.ssd_monthly,
-          hdd_monthly: data.storage?.azure?.hdd_monthly ?? STORAGE_CFG.azure.hdd_monthly,
-        }
-      };
-    }
-
-    // AWS storage price (per-GB-month → monthly)
-    const awsStorageMonthly = getAwsStorageMonthlyFromCfg(storageType, storageAmtGB, STORAGE_CFG.aws);
-    const awsStorageHr      = (awsStorageMonthly != null) ? awsStorageMonthly / HRS_PER_MONTH : null;
-
-    // Azure storage price (fixed SKU/month → monthly)
-    const { sku: azDiskSku, size: azDiskGB, monthlyUSD: azStorageMonthly } =
-      getAzureStorageSkuAndMonthlyFromCfg(storageType, storageAmtGB, STORAGE_CFG.azure);
-    const azStorageHr = (azStorageMonthly != null) ? azStorageMonthly / HRS_PER_MONTH : null;
-
-    // ---------- Render AWS (compute only) ----------
-    if (!awsCard || awsCard.error) {
-      const awsInst = document.getElementById("awsInstance");
-      if (awsInst) awsInst.innerHTML =
-        `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; Error: ${awsCard?.error ?? "No match"}`;
-    } else {
-      const awsInst = document.getElementById("awsInstance");
-      if (awsInst) awsInst.innerHTML =
-        `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; ${awsCard.instance} (${awsCard.region})`;
-      safeSetText("awsCpu",     `vCPU: ${awsCard.vcpu}`);
-      safeSetText("awsRam",     `RAM: ${awsCard.ram} GB`);
-      safeSetText("awsPrice",   `Price/hr: ${fmt(awsCard.pricePerHourUSD)}`);
-      safeSetText("awsMonthly", `≈ Monthly: ${fmt(monthly(awsCard.pricePerHourUSD))}`);
-    }
-
-    // ---------- Render Azure (compute only) ----------
-    if (!azCard || azCard.error) {
-      const azInst = document.getElementById("azInstance");
-      if (azInst) azInst.innerHTML =
-        `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; Error: ${azCard?.error ?? "No match"}`;
-    } else {
-      const azInst = document.getElementById("azInstance");
-      if (azInst) azInst.innerHTML =
-        `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; ${azCard.instance} (${azCard.region})`;
-      safeSetText("azCpu",     `vCPU: ${azCard.vcpu}`);
-      safeSetText("azRam",     `RAM: ${azCard.ram} GB`);
-      safeSetText("azPrice",   `Price/hr: ${fmt(azCard.pricePerHourUSD)}`);
-      safeSetText("azMonthly", `≈ Monthly: ${fmt(monthly(azCard.pricePerHourUSD))}`);
-    }
-
-    // ---------- Render Storage Prices ----------
-    // AWS storage lines
-    safeSetText("awsStoragePriceHr", fmt(awsStorageHr));
-    safeSetText("awsStorageMonthly", fmt(awsStorageMonthly));
-
-    // Azure storage lines (include SKU if we mapped to a different size)
-    safeSetText("azStoragePriceHr", fmt(azStorageHr));
-    safeSetText("azStorageMonthly", fmt(azStorageMonthly));
-    if (azDiskSku) {
-      const extra = (azDiskGB &amp;amp;&amp;amp; azDiskGB !== storageAmtGB)
-        ? ` (billed as ${azDiskGB} GB ${storageType.toUpperCase()}, ${azDiskSku})`
-        : ` (${azDiskSku})`;
-      appendToText("azStorageSel", extra);
-    }
-
-    // ---------- Totals (compute + storage) ----------
-    const awsComputeHr     = awsCard?.pricePerHourUSD ?? null;
-    const awsComputeMonth  = monthly(awsComputeHr);
-    const awsTotalHr       = sumSafe(awsComputeHr, awsStorageHr);
-    const awsTotalMonthly  = sumSafe(awsComputeMonth, awsStorageMonthly);
-    safeSetText("awsTotalHr",      fmt(awsTotalHr));
-    safeSetText("awsTotalMonthly", fmt(awsTotalMonthly));
-
-    const azComputeHr     = azCard?.pricePerHourUSD ?? null;
-    const azComputeMonth  = monthly(azComputeHr);
-    const azTotalHr       = sumSafe(azComputeHr, azStorageHr);
-    const azTotalMonthly  = sumSafe(azComputeMonth, azStorageMonthly);
-    safeSetText("azTotalHr",      fmt(azTotalHr));
-    safeSetText("azTotalMonthly", fmt(azTotalMonthly));
-
-    // Reveal family filters after first comparison
-    showFamilyFilters();
-
-    setStatus("Comparison complete ✓");
-  } catch (err) {
-    console.error(err);
-    setStatus(`Error: ${err.message}`, "error");
-    alert("Unable to read local prices. Please try again.");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-// ============================================================
-// ---------- Storage Type tooltip (non-blocking bubble) ----------
-function initStorageTypeTooltip() {
-  const btn = document.getElementById("storageInfoBtn");
-  const tip = document.getElementById("storageInfoTip");
-  const label = document.querySelector('label[for="storageType"].label-with-info');
-  const select = document.getElementById("storageType");
-  if (!btn || !tip || !label || !select) return;
-
-  // Place the bubble just below the Storage Type select
-  function positionTip() {
-    const rect = select.getBoundingClientRect();
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-
-    const left = rect.left + scrollX;
-    const top  = rect.bottom + scrollY + 6; // small gap below select
-
-    tip.style.position = "absolute";
-    tip.style.left = `${left}px`;
-    tip.style.top  = `${top}px`;
-
-    // Move arrow to roughly align under the i badge
-    const arrow = tip.querySelector(".info-pop__arrow");
-    if (arrow) {
-      const btnRect = btn.getBoundingClientRect();
-      const offset = Math.max(10, Math.min(28, btnRect.left - rect.left));
-      arrow.style.left = `${offset}px`;
-    }
-  }
-
-  function openTip() {
-    positionTip();
-    tip.setAttribute("aria-hidden", "false");
-    btn.setAttribute("aria-expanded", "true");
-    document.addEventListener("click", outsideClose, { capture: true });
-    document.addEventListener("keydown", escClose);
-  }
-
-  function closeTip() {
-    tip.setAttribute("aria-hidden", "true");
-    btn.setAttribute("aria-expanded", "false");
-    document.removeEventListener("click", outsideClose, { capture: true });
-    document.removeEventListener("keydown", escClose);
-  }
-
-  function toggleTip() {
-    const open = tip.getAttribute("aria-hidden") === "false";
-    open ? closeTip() : openTip();
-  }
-
-  function outsideClose(e) {
-    if (tip.contains(e.target) || btn.contains(e.target) || label.contains(e.target) || select.contains(e.target)) return;
-    closeTip();
-  }
-
-  function escClose(e) {
-    if (e.key === "Escape") closeTip();
-  }
-
-  btn.addEventListener("click", (e) =&amp;gt; {
-    e.stopPropagation();
-    toggleTip();
-  });
-  btn.addEventListener("keydown", (e) =&amp;gt; {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggleTip();
-    }
-  });
-
-  // Reposition while open on resize/scroll
-  window.addEventListener("resize", () =&amp;gt; {
-    if (tip.getAttribute("aria-hidden") === "false") positionTip();
-  });
-  window.addEventListener("scroll", () =&amp;gt; {
-    if (tip.getAttribute("aria-hidden") === "false") positionTip();
-  });
-}
-
-// ============================================================
-// ---------- OS Type tooltip (non-blocking bubble) ----------
-function initOsTypeTooltip() {
-  const btn    = document.getElementById("osInfoBtn");
-  const tip    = document.getElementById("osInfoTip");
-  // Be tolerant: if the label doesn't have .label-with-info yet, fall back to plain [for="os"]
-  let label    = document.querySelector('label[for="os"].label-with-info')
-              || document.querySelector('label[for="os"]');
-  const select = document.getElementById("os");
-
-  // Guard & log (so we can see what's missing in DevTools if it fails again)
-  if (!btn || !tip || !label || !select) {
-    console.warn("[initOsTypeTooltip] Missing elements:",
-      { btn: !!btn, tip: !!tip, label: !!label, select: !!select });
-    return;
-  }
-
-  // Prefer anchoring to the label; fall back to select if needed
-  function getAnchorRect() {
-    const anchor = label || select;
-    return anchor.getBoundingClientRect();
-  }
-
-  function positionTip() {
-    const rect   = getAnchorRect();
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-
-    const left = rect.left + scrollX;
-    const top  = rect.bottom + scrollY + 6;
-
-    tip.style.position = "absolute";
-    tip.style.left = `${left}px`;
-    tip.style.top  = `${top}px`;
-
-    const arrow = tip.querySelector(".info-pop__arrow");
-    if (arrow) {
-      const btnRect = btn.getBoundingClientRect();
-      const offset = Math.max(10, Math.min(28, btnRect.left - rect.left));
-      arrow.style.left = `${offset}px`;
-    }
-  }
-
-  function openTip() {
-    positionTip();
-    tip.setAttribute("aria-hidden", "false");
-    btn.setAttribute("aria-expanded", "true");
-    document.addEventListener("click", outsideClose, { capture: true });
-    document.addEventListener("keydown", escClose);
-  }
-
-  function closeTip() {
-    tip.setAttribute("aria-hidden", "true");
-    btn.setAttribute("aria-expanded", "false");
-    document.removeEventListener("click", outsideClose, { capture: true });
-    document.removeEventListener("keydown", escClose);
-  }
-
-  function toggleTip() {
-    const open = tip.getAttribute("aria-hidden") === "false";
-    open ? closeTip() : openTip();
-  }
-
-  function outsideClose(e) {
-    if (tip.contains(e.target) || btn.contains(e.target) || label.contains(e.target) || select.contains(e.target)) return;
-    closeTip();
-  }
-
-  function escClose(e) {
-    if (e.key === "Escape") closeTip();
-  }
-
-  // Open/close by click or keyboard on the badge
-  btn.addEventListener("click", (e) =&amp;gt; {
-    e.stopPropagation();
-    toggleTip();
-  });
-  btn.addEventListener("keydown", (e) =&amp;gt; {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggleTip();
-    }
-  });
-
-  // Reposition while open on resize/scroll
-  window.addEventListener("resize", () =&amp;gt; {
-    if (tip.getAttribute("aria-hidden") === "false") positionTip();
-  });
-  window.addEventListener("scroll", () =&amp;gt; {
-    if (tip.getAttribute("aria-hidden") === "false") positionTip();
-  });
-}
-
-// ============================================================
-// ---------- Storage price resolvers (from STORAGE_CFG) ----------
-
-// AWS: per-GB-month → monthly
-function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
-  if (!isFinite(gb) || gb &amp;lt;= 0) return null;
-  const t = (type || "hdd").toLowerCase();
-  if (t === "ssd") return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
-  return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
-}
-
-// Azure: map (type, gb) → SKU &amp;amp; monthly price (rounded up to nearest supported size)
-function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
-  const t = (type || "hdd").toLowerCase();
-  if (!isFinite(gb) || gb &amp;lt;= 0) return { sku: null, size: null, monthlyUSD: null };
-
-  const ssdTbl = azCfg?.ssd_monthly || {};
-  const hddTbl = azCfg?.hdd_monthly || {};
-
-  if (t === "ssd") {
-    const size = nearestCeil(gb, Object.keys(ssdTbl).map(Number));
-    const monthlyUSD = size != null ? (ssdTbl[size] ?? null) : null;
-    const sku = sizeToAzureSku("ssd", size);
-    return { sku, size, monthlyUSD };
-  } else {
-    const size = nearestCeil(gb, Object.keys(hddTbl).map(Number));
-    const monthlyUSD = size != null ? (hddTbl[size] ?? null) : null;
-    const sku = sizeToAzureSku("hdd", size);
-    return { sku, size, monthlyUSD };
-  }
-}
-
-function nearestCeil(requested, allowedSizes) {
-  const sorted = [...allowedSizes].sort((a,b) =&amp;gt; a - b);
-  for (const s of sorted) if (requested &amp;lt;= s) return s;
-  return sorted.length ? sorted[sorted.length - 1] : null;
-}
-
-function sizeToAzureSku(type, size) {
-  if (!isFinite(size)) return null;
-  if (type === "ssd") {
-    // E1=4, E2=8, E3=16, E4=32, E6=64, E10=128, E15=256, E20=512
-    const map = {4:"E1",8:"E2",16:"E3",32:"E4",64:"E6",128:"E10",256:"E15",512:"E20"};
-    return map[size] || null;
-  } else {
-    // S4=32, S6=64, S10=128, S15=256, S20=512
-    const map = {32:"S4",64:"S6",128:"S10",256:"S15",512:"S20"};
-    return map[size] || null;
-  }
-}
-
-// ============================================================
-// ---------- Reset cards ----------
-function resetCards() {
-  const awsInst = document.getElementById("awsInstance");
-  if (awsInst) awsInst.innerHTML = `&amp;lt;strong&amp;gt;Recommended Instance:&amp;lt;/strong&amp;gt; …`;
-  const azInst  = document.getElementById("azInstance");
-  if (azInst)  azInst.innerHTML  = `&amp;lt;strong&amp;gt;Recommended VM Size:&amp;lt;/strong&amp;gt; …`;
-
-  safeSetText("awsCpu",      "vCPU: …");
-  safeSetText("awsRam",      "RAM: …");
-  safeSetText("awsPrice",    "Price/hr: -");
-  safeSetText("awsMonthly",  "≈ Monthly: -");
-  safeSetText("azCpu",       "vCPU: …");
-  safeSetText("azRam",       "RAM: …");
-  safeSetText("azPrice",     "Price/hr: -");
-  safeSetText("azMonthly",   "≈ Monthly: -");
-
-  // Clear storage-related lines
-  safeSetText("awsStorageSel",      "Storage: —");
-  safeSetText("awsStoragePriceHr",  "—");
-  safeSetText("awsStorageMonthly",  "—");
-  safeSetText("awsTotalHr",         "—");
-  safeSetText("awsTotalMonthly",    "—");
-
-  safeSetText("azStorageSel",       "Storage: —");
-  safeSetText("azStoragePriceHr",   "—");
-  safeSetText("azStorageMonthly",   "—");
-  safeSetText("azTotalHr",          "—");
-  safeSetText("azTotalMonthly",     "—");
-
-  // Hide family filters until first successful compare
-  resetFamilyFilters();
-}
-
-// ============================================================
-// ---------- Compute matching logic with OS + Family ----------
-function findBestAws(list, vcpu, ram, os, family) {
-  if (!Array.isArray(list) || list.length === 0) throw new Error("AWS price list is empty");
-
-  const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
-  const filtered = list.filter(x =&amp;gt;
-    isFinite(x.vcpu) &amp;amp;&amp;amp;
-    isFinite(x.ram) &amp;amp;&amp;amp;
-    isFinite(x.pricePerHourUSD) &amp;amp;&amp;amp;
-    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;amp;&amp;amp;
-    isAwsInFamily(x.instance, family)
-  );
-  if (filtered.length === 0) {
-    const fLabel = family ? ` family=${family}` : "";
-    throw new Error(`No AWS entries for OS=${os || "any"}${fLabel}`);
-  }
-
-  let best = null;
-  let bestScore = Infinity;
-  for (const x of filtered) {
-    const score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
-    const tieBreaker = x.pricePerHourUSD || Infinity;
-    if (score &amp;lt; bestScore || (score === bestScore &amp;amp;&amp;amp; tieBreaker &amp;lt; (best?.pricePerHourUSD ?? Infinity))) {
-      best = x;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-function findBestAzure(list, vcpu, ram, os, family) {
-  if (!Array.isArray(list) || list.length === 0) throw new Error("Azure price list is empty");
-
-  const wantOS = String(os || "").toLowerCase(); // "linux" or "windows"
-  const pre = list.filter(x =&amp;gt;
-    (!wantOS || String(x.os || "").toLowerCase() === wantOS) &amp;amp;&amp;amp;
-    isAzureInFamily(x.instance, family)
-  );
-  if (pre.length === 0) {
-    const fLabel = family ? ` family=${family}` : "";
-    throw new Error(`No Azure entries for OS=${os || "any"}${fLabel}`);
-  }
-
-  // Enrich with heuristics for missing vCPU/RAM
-  const enriched = pre.map(x =&amp;gt; {
-    const meta = inferAzureCoresRamFromName(x.instance);
-    return {
-      ...x,
-      vcpu: x.vcpu ?? meta.vcpu,
-      ram:  x.ram  ?? meta.ram
-    };
-  });
-
-  let best = null;
-  let bestScore = Infinity;
-  for (const x of enriched) {
-    let score;
-    if (isFinite(x.vcpu) &amp;amp;&amp;amp; isFinite(x.ram)) {
-      score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
-    } else {
-      const price = Number(x.pricePerHourUSD) || Infinity;
-      score = 500 + price; // prefer known-spec SKUs
-    }
-    const tieBreaker = Number(x.pricePerHourUSD) || Infinity;
-    if (score &amp;lt; bestScore || (score === bestScore &amp;amp;&amp;amp; tieBreaker &amp;lt; (best?.pricePerHourUSD ?? Infinity))) {
-      best = x;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-function distance(a, b) {
-  if (!isFinite(a) || !isFinite(b)) return 1000;
-  return Math.abs(Number(a) - Number(b));
-}
-
-// Try to parse cores/RAM from common Azure SKU patterns (best-effort)
-function inferAzureCoresRamFromName(name) {
-  if (!name || typeof name !== "string") return { vcpu: null, ram: null };
-  const n = name.toLowerCase();
-  const coreMatch = n.match(/(?:^standard_)?[a-z]+(\d+)[a-z]*\s*(v\d+)?/i);
-  const vcpu = coreMatch ? Number(coreMatch[1]) : null;
-
-  let familyRamPerCore = null;
-  if (n.startsWith("standard_d")) familyRamPerCore = 4;
-  else if (n.startsWith("standard_f")) familyRamPerCore = 2;
-  else if (n.startsWith("standard_e")) familyRamPerCore = 8;
-  else if (n.startsWith("standard_b")) familyRamPerCore = 4;
-  else if (n.startsWith("standard_m")) familyRamPerCore = 16; // rough fallback for M
-
-  const ram = (vcpu &amp;amp;&amp;amp; familyRamPerCore) ? vcpu * familyRamPerCore : null;
-  return { vcpu, ram };
-}
