@@ -22,6 +22,7 @@ let STORAGE_CFG = {
 // ============================================================
 // Bootstrapping
 document.addEventListener("DOMContentLoaded", async () => {
+  // Fallback meta so UI isn't blank
   fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
   fillSelect("cpu",  [1, 2, 4, 8, 16].map(v => ({ value: v, text: v })));
   fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v => ({ value: v, text: v })));
@@ -29,14 +30,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   setSelectValue("cpu", "2");
   setSelectValue("ram", "4");
 
+  // Family change = re-compare (persist selection)
   ["awsFamily", "azFamily"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("change", () => compare(false));
   });
 
+  // Tooltips
   initStorageTypeTooltip();
   initOsTypeTooltip();
 
+  // Try enhancing meta from prices.json
   try {
     const r = await fetch(API_BASE, { mode: "cors" });
     const j = r.ok ? await r.json() : {};
@@ -72,11 +76,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch {}
 
+  // Initial compare
   compare(false);
 });
 
 // ============================================================
-// Helpers
+// Basic helpers
 function fillSelect(id, items) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -128,9 +133,7 @@ function sumSafe(a, b) {
 }
 
 // ============================================================
-// NORMALIZATION (NEW)
-// ============================================================
-
+// NORMALIZATION (On-Demand, Shared, OS)
 function normalizeOs(val) {
   const s = String(val || '').toLowerCase();
   if (s.startsWith('win')) return 'windows';
@@ -144,17 +147,17 @@ function isOnDemandShared(x) {
   const okBilling = (!bm || bm === 'ondemand');
   const okTenancy = (!ten || ten === 'shared');
 
-  const blob = [
-    x.productName, x.skuName, x.meterName, x.instance
-  ].filter(Boolean).join(" ").toLowerCase();
+  const blob = [x.productName, x.skuName, x.meterName, x.instance]
+    .filter(Boolean).join(" ").toLowerCase();
 
-  const looksSpot = blob.includes("low priority") || blob.includes("spot");
+  const looksSpot = blob.includes("low priority") || blob.includes("spot")
+                 || blob.includes("savings plan") || blob.includes("reserved");
 
   return okBilling && okTenancy && !looksSpot;
 }
 
 // ============================================================
-// Family logic
+// Family helpers
 function showFamilyFilters() {
   const awsW = document.getElementById("awsFamilyWrap");
   const azW  = document.getElementById("azFamilyWrap");
@@ -337,9 +340,190 @@ async function compare(resetFamilies = false) {
 }
 
 // ============================================================
-// Storage Type Tooltip, OS Tooltip, and Helpers
-// (unchanged from your version, skipped here for brevity)
+// Tooltips (Storage & OS)
+
+// Storage Type tooltip (non-blocking bubble)
+function initStorageTypeTooltip() {
+  const btn = document.getElementById("storageInfoBtn");
+  const tip = document.getElementById("storageInfoTip");
+  const label = document.querySelector('label[for="storageType"].label-with-info');
+  const select = document.getElementById("storageType");
+  if (!btn || !tip || !label || !select) return;
+
+  function positionTip() {
+    const rect = select.getBoundingClientRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const left = rect.left + scrollX;
+    const top  = rect.bottom + scrollY + 6;
+    tip.style.position = "absolute";
+    tip.style.left = `${left}px`;
+    tip.style.top  = `${top}px`;
+    const arrow = tip.querySelector(".info-pop__arrow");
+    if (arrow) {
+      const btnRect = btn.getBoundingClientRect();
+      const offset = Math.max(10, Math.min(28, btnRect.left - rect.left));
+      arrow.style.left = `${offset}px`;
+    }
+  }
+
+  function openTip() {
+    positionTip();
+    tip.setAttribute("aria-hidden", "false");
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outsideClose, { capture: true });
+    document.addEventListener("keydown", escClose);
+  }
+
+  function closeTip() {
+    tip.setAttribute("aria-hidden", "true");
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outsideClose, { capture: true });
+    document.removeEventListener("keydown", escClose);
+  }
+
+  function toggleTip() {
+    const open = tip.getAttribute("aria-hidden") === "false";
+    open ? closeTip() : openTip();
+  }
+
+  function outsideClose(e) {
+    if (tip.contains(e.target) || btn.contains(e.target) || label.contains(e.target) || select.contains(e.target)) return;
+    closeTip();
+  }
+  function escClose(e) { if (e.key === "Escape") closeTip(); }
+
+  btn.addEventListener("click", (e) => { e.stopPropagation(); toggleTip(); });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTip(); }
+  });
+
+  window.addEventListener("resize", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
+  });
+  window.addEventListener("scroll", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
+  });
+}
+
+// OS Type tooltip (non-blocking bubble)
+function initOsTypeTooltip() {
+  const btn    = document.getElementById("osInfoBtn");
+  const tip    = document.getElementById("osInfoTip");
+  let label    = document.querySelector('label[for="os"].label-with-info')
+              || document.querySelector('label[for="os"]');
+  const select = document.getElementById("os");
+  if (!btn || !tip || !label || !select) {
+    console.warn("[initOsTypeTooltip] Missing elements:",
+      { btn: !!btn, tip: !!tip, label: !!label, select: !!select });
+    return;
+  }
+
+  function getAnchorRect() { return (label || select).getBoundingClientRect(); }
+
+  function positionTip() {
+    const rect   = getAnchorRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const left = rect.left + scrollX;
+    const top  = rect.bottom + scrollY + 6;
+    tip.style.position = "absolute";
+    tip.style.left = `${left}px`;
+    tip.style.top  = `${top}px`;
+    const arrow = tip.querySelector(".info-pop__arrow");
+    if (arrow) {
+      const btnRect = btn.getBoundingClientRect();
+      const offset = Math.max(10, Math.min(28, btnRect.left - rect.left));
+      arrow.style.left = `${offset}px`;
+    }
+  }
+
+  function openTip() {
+    positionTip();
+    tip.setAttribute("aria-hidden", "false");
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outsideClose, { capture: true });
+    document.addEventListener("keydown", escClose);
+  }
+  function closeTip() {
+    tip.setAttribute("aria-hidden", "true");
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outsideClose, { capture: true });
+    document.removeEventListener("keydown", escClose);
+  }
+  function toggleTip() {
+    const open = tip.getAttribute("aria-hidden") === "false";
+    open ? closeTip() : openTip();
+  }
+  function outsideClose(e) {
+    if (tip.contains(e.target) || btn.contains(e.target) || label.contains(e.target) || select.contains(e.target)) return;
+    closeTip();
+  }
+  function escClose(e) { if (e.key === "Escape") closeTip(); }
+
+  btn.addEventListener("click", (e) => { e.stopPropagation(); toggleTip(); });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTip(); }
+  });
+
+  window.addEventListener("resize", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
+  });
+  window.addEventListener("scroll", () => {
+    if (tip.getAttribute("aria-hidden") === "false") positionTip();
+  });
+}
+
 // ============================================================
+// Storage resolvers (from STORAGE_CFG)
+
+// AWS: per-GB-month → monthly
+function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
+  if (!isFinite(gb) || gb <= 0) return null;
+  const t = (type || "hdd").toLowerCase();
+  if (t === "ssd") return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
+  return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
+}
+
+// Azure: map (type, gb) → SKU & monthly price (rounded up to nearest supported size)
+function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
+  const t = (type || "hdd").toLowerCase();
+  if (!isFinite(gb) || gb <= 0) return { sku: null, size: null, monthlyUSD: null };
+
+  const ssdTbl = azCfg?.ssd_monthly || {};
+  const hddTbl = azCfg?.hdd_monthly || {};
+
+  if (t === "ssd") {
+    const size = nearestCeil(gb, Object.keys(ssdTbl).map(Number));
+    const monthlyUSD = size != null ? (ssdTbl[size] ?? null) : null;
+    const sku = sizeToAzureSku("ssd", size);
+    return { sku, size, monthlyUSD };
+  } else {
+    const size = nearestCeil(gb, Object.keys(hddTbl).map(Number));
+    const monthlyUSD = size != null ? (hddTbl[size] ?? null) : null;
+    const sku = sizeToAzureSku("hdd", size);
+    return { sku, size, monthlyUSD };
+  }
+}
+
+function nearestCeil(requested, allowedSizes) {
+  const sorted = [...allowedSizes].sort((a,b) => a - b);
+  for (const s of sorted) if (requested <= s) return s;
+  return sorted.length ? sorted[sorted.length - 1] : null;
+}
+
+function sizeToAzureSku(type, size) {
+  if (!isFinite(size)) return null;
+  if (type === "ssd") {
+    // E1=4, E2=8, E3=16, E4=32, E6=64, E10=128, E15=256, E20=512
+    const map = {4:"E1",8:"E2",16:"E3",32:"E4",64:"E6",128:"E10",256:"E15",512:"E20"};
+    return map[size] || null;
+  } else {
+    // S4=32, S6=64, S10=128, S15=256, S20=512
+    const map = {32:"S4",64:"S6",128:"S10",256:"S15",512:"S20"};
+    return map[size] || null;
+  }
+}
 
 // ============================================================
 // Reset cards
@@ -371,7 +555,7 @@ function resetCards() {
 }
 
 // ============================================================
-// Compute matching (updated with normalization)
+// Compute matching (apple-to-apple)
 function findBestAws(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error("AWS price list is empty");
@@ -447,9 +631,8 @@ function findBestAzure(list, vcpu, ram, os, family) {
       score = distance(x.vcpu, vcpu) + distance(x.ram, ram);
     } else {
       const price = x.pricePerHourUSD ?? Infinity;
-      score = 500 + price;
+      score = 500 + price; // prefer known-spec SKUs
     }
-
     const tieBreaker = x.pricePerHourUSD ?? Infinity;
 
     if (score < bestScore || (score === bestScore && tieBreaker < (best?.pricePerHourUSD ?? Infinity))) {
@@ -466,6 +649,7 @@ function distance(a, b) {
   return Math.abs(Number(a) - Number(b));
 }
 
+// Try to parse cores/RAM from common Azure SKU patterns (best-effort)
 function inferAzureCoresRamFromName(name) {
   if (!name || typeof name !== "string") return { vcpu: null, ram: null };
   const n = name.toLowerCase();
