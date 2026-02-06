@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize tooltips
   initStorageTypeTooltip();
-  initOsTypeTooltip(); // <-- NEW: hardened OS tooltip
+  initOsTypeTooltip(); // <-- hardened OS tooltip
 
   // 2) Try to enhance with data/prices.json (overwrites the fallbacks if present)
   try {
@@ -139,15 +139,13 @@ function showFamilyFilters() {
   if (awsW) awsW.style.display = "flex";
   if (azW)  azW.style.display  = "flex";
 }
+
+// IMPORTANT: Do NOT clear values here; we only use this to hide on first load if needed
 function resetFamilyFilters() {
   const awsW = document.getElementById("awsFamilyWrap");
   const azW  = document.getElementById("azFamilyWrap");
-  const awsS = document.getElementById("awsFamily");
-  const azS  = document.getElementById("azFamily");
   if (awsW) awsW.style.display = "none";
   if (azW)  azW.style.display  = "none";
-  if (awsS) awsS.value = "";
-  if (azS)  azS.value = "";
 }
 
 // ---------- Family membership tests (client-side) ----------
@@ -192,7 +190,7 @@ async function compare() {
   const familyAz  = document.getElementById("azFamily")?.value  || "";
 
   try {
-    resetCards();
+    resetCards(); // NOTE: no longer hides or resets family selects
 
     const r = await fetch(API_BASE, { mode: "cors" });
     if (!r.ok) throw new Error(`Failed to read ${API_BASE}`);
@@ -319,7 +317,7 @@ async function compare() {
     safeSetText("azTotalHr",      fmt(azTotalHr));
     safeSetText("azTotalMonthly", fmt(azTotalMonthly));
 
-    // Reveal family filters after first comparison
+    // Reveal family filters after first comparison (and keep them visible)
     showFamilyFilters();
 
     setStatus("Comparison complete ✓");
@@ -586,8 +584,8 @@ function resetCards() {
   safeSetText("azTotalHr",          "—");
   safeSetText("azTotalMonthly",     "—");
 
-  // Hide family filters until first successful compare
-  resetFamilyFilters();
+  // NOTE: Do NOT hide or reset the family selects here — let the user’s choice persist
+  // (We keep family rows visible once shown via showFamilyFilters() after first compare)
 }
 
 // ============================================================
