@@ -2,6 +2,7 @@ name: Update Cloud Prices
 
 permissions:
   contents: write
+  id-token: write    # REQUIRED for OIDC federation
 
 on:
   schedule:
@@ -16,6 +17,38 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ---------------------------
+      # 1. Azure OIDC Login
+      # ---------------------------
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          auth-type: "id-token"
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ---------------------------
+      # 2. Install Azure CLI (needed for ARM token)
+      # ---------------------------
+      - name: Install Azure CLI
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            echo "Azure CLI installed"
+
+      # ---------------------------
+      # 3. Generate ARM Access Token
+      # ---------------------------
+      - name: Generate ARM Token
+        run: |
+          echo "Fetching ARM token..."
+          ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
+
+      # ---------------------------
+      # 4. Setup Node
+      # ---------------------------
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -24,9 +57,19 @@ jobs:
       - name: Install node-fetch
         run: npm install node-fetch@2
 
+      # ---------------------------
+      # 5. Run your updated price fetcher
+      # ---------------------------
       - name: Fetch AWS & Azure prices
         run: node scripts/fetch-prices.js
+        env:
+          ARM_TOKEN: ${{ env.ARM_TOKEN }}
+          AZURE_REGION: "eastus"
+          AWS_REGION: "us-east-1"
 
+      # ---------------------------
+      # 6. Commit updated prices.json
+      # ---------------------------
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
