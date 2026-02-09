@@ -66,6 +66,11 @@ jobs:
           AZURE_REGION: "eastus"
           AWS_REGION: "us-east-1"
 
+          # 🔥 REQUIRED FIX — These must be passed to Node.js
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+
       # ---------------------------
       # 6. Commit updated prices.json
       # ---------------------------
