@@ -3,7 +3,7 @@ permissions:
   contents: write
 
 on:
-  workflow_call: {}       # <— allows other workflows to call this
+  workflow_call: {}
   workflow_dispatch: {}
   schedule:
     - cron: "15 */6 * * *"
@@ -27,6 +27,12 @@ jobs:
 
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
+
+      - name: Debug git status
+        run: |
+          git status --porcelain
+          echo "---"
+          git diff --name-only -- data || true
 
       - name: Skip commit if no changes
         id: delta
