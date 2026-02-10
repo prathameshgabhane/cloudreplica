@@ -19416,7 +19416,890 @@
       "os": "Windows"
     }
   ],
-  "azure": [],
+  "azure": [
+    {
+      "instance": "Standard_F16-8ams_v7",
+      "pricePerHourUSD": 0.400646,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX32-8ms_v2",
+      "pricePerHourUSD": 0.926402,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 672,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E8-4ds_v5",
+      "pricePerHourUSD": 0.22099,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E16-8ds_v5",
+      "pricePerHourUSD": 0.441981,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F4-2amds_v7",
+      "pricePerHourUSD": 0.114576,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E4-2ds_v5",
+      "pricePerHourUSD": 0.110495,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 32,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-8s_v5",
+      "pricePerHourUSD": 0.860141,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E96-24ds_v5",
+      "pricePerHourUSD": 2.651885,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E16-4as_v5",
+      "pricePerHourUSD": 0.303072,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX16-4mds_v2",
+      "pricePerHourUSD": 0.540355,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 336,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F16-8amds_v7",
+      "pricePerHourUSD": 0.458304,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E4-2as_v5",
+      "pricePerHourUSD": 0.075768,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 32,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F32-16amds_v7",
+      "pricePerHourUSD": 0.916793,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F8-4ams_v7",
+      "pricePerHourUSD": 0.200323,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E16-8as_v5",
+      "pricePerHourUSD": 0.303072,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX64-16ms_v2",
+      "pricePerHourUSD": 1.852805,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 1344,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E16-8ads_v5",
+      "pricePerHourUSD": 0.329683,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-16ads_v5",
+      "pricePerHourUSD": 0.659366,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F64-32ams_v7",
+      "pricePerHourUSD": 1.602586,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E16-4ads_v5",
+      "pricePerHourUSD": 0.329683,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E4-2ads_v5",
+      "pricePerHourUSD": 0.082421,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 32,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E64-16s_v5",
+      "pricePerHourUSD": 1.720282,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX16-4ms_v2",
+      "pricePerHourUSD": 0.463294,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 336,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E16-4ds_v5",
+      "pricePerHourUSD": 0.441981,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-16as_v5",
+      "pricePerHourUSD": 0.606144,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX8-2mds_v2",
+      "pricePerHourUSD": 0.270178,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 168,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E96-24as_v5",
+      "pricePerHourUSD": 1.818432,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E4-2s_v5",
+      "pricePerHourUSD": 0.107518,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 32,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E96-24s_v5",
+      "pricePerHourUSD": 2.580422,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX8-4ms_v2",
+      "pricePerHourUSD": 0.231554,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 168,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX24-6ms_v2",
+      "pricePerHourUSD": 0.694848,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 24,
+      "ram": 504,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E32-16ds_v5",
+      "pricePerHourUSD": 0.883962,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E96-48ds_v5",
+      "pricePerHourUSD": 2.651885,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E64-16ads_v5",
+      "pricePerHourUSD": 1.318733,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E8-4s_v5",
+      "pricePerHourUSD": 0.215035,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX48-12mds_v2",
+      "pricePerHourUSD": 1.62125,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 48,
+      "ram": 1008,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX48-24mds_v2",
+      "pricePerHourUSD": 1.62125,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 48,
+      "ram": 1008,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX32-16ms_v2",
+      "pricePerHourUSD": 0.926402,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 672,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E8-2ds_v5",
+      "pricePerHourUSD": 0.22099,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E16-4s_v5",
+      "pricePerHourUSD": 0.43007,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-8as_v5",
+      "pricePerHourUSD": 0.606144,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F8-2amds_v7",
+      "pricePerHourUSD": 0.229152,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX8-2ms_v2",
+      "pricePerHourUSD": 0.231554,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 168,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX24-12ms_v2",
+      "pricePerHourUSD": 0.694848,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 24,
+      "ram": 504,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E32-8ads_v5",
+      "pricePerHourUSD": 0.659366,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX32-16mds_v2",
+      "pricePerHourUSD": 1.080895,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 672,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX64-16mds_v2",
+      "pricePerHourUSD": 2.161606,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 1344,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX64-32mds_v2",
+      "pricePerHourUSD": 2.161606,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 1344,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX96-48ms_v2",
+      "pricePerHourUSD": 2.779207,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 1832,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E96-48as_v5",
+      "pricePerHourUSD": 1.818432,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E8-2as_v5",
+      "pricePerHourUSD": 0.151536,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F32-16ams_v7",
+      "pricePerHourUSD": 0.801293,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F32-8amds_v7",
+      "pricePerHourUSD": 0.916793,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F32-8ams_v7",
+      "pricePerHourUSD": 0.801293,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F2-1ams_v7",
+      "pricePerHourUSD": 0.050081,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F16-4amds_v7",
+      "pricePerHourUSD": 0.458304,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX24-6mds_v2",
+      "pricePerHourUSD": 0.810533,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 24,
+      "ram": 504,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E96-48s_v5",
+      "pricePerHourUSD": 2.580422,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E64-32ads_v5",
+      "pricePerHourUSD": 1.318733,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F8-2ams_v7",
+      "pricePerHourUSD": 0.200323,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX24-12mds_v2",
+      "pricePerHourUSD": 0.810533,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 24,
+      "ram": 504,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E64-32s_v5",
+      "pricePerHourUSD": 1.720282,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX16-8mds_v2",
+      "pricePerHourUSD": 0.540355,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 336,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E64-32ds_v5",
+      "pricePerHourUSD": 1.767923,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX12-6ms_v2",
+      "pricePerHourUSD": 0.347424,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 12,
+      "ram": 252,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX48-24ms_v2",
+      "pricePerHourUSD": 1.389696,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 48,
+      "ram": 1008,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E8-4ads_v5",
+      "pricePerHourUSD": 0.164842,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-8ds_v5",
+      "pricePerHourUSD": 0.883962,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX96-24ms_v2",
+      "pricePerHourUSD": 2.779207,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 1832,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F64-16amds_v7",
+      "pricePerHourUSD": 1.833401,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX64-32ms_v2",
+      "pricePerHourUSD": 1.852805,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 1344,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F4-1ams_v7",
+      "pricePerHourUSD": 0.100162,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX4-2mds_v2",
+      "pricePerHourUSD": 0.135089,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 84,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX12-6mds_v2",
+      "pricePerHourUSD": 0.405266,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 12,
+      "ram": 252,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F2-1amds_v7",
+      "pricePerHourUSD": 0.057288,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F8-4amds_v7",
+      "pricePerHourUSD": 0.229152,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E96-24ads_v5",
+      "pricePerHourUSD": 1.978099,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E96-48ads_v5",
+      "pricePerHourUSD": 1.978099,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 672,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E16-8s_v5",
+      "pricePerHourUSD": 0.43007,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 128,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E64-16as_v5",
+      "pricePerHourUSD": 1.212288,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E8-2s_v5",
+      "pricePerHourUSD": 0.215035,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX96-24mds_v2",
+      "pricePerHourUSD": 3.242501,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 1832,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E64-16ds_v5",
+      "pricePerHourUSD": 1.767923,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX4-2ms_v2",
+      "pricePerHourUSD": 0.11587,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 4,
+      "ram": 84,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX48-12ms_v2",
+      "pricePerHourUSD": 1.389696,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 48,
+      "ram": 1008,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E8-2ads_v5",
+      "pricePerHourUSD": 0.164842,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_FX8-4mds_v2",
+      "pricePerHourUSD": 0.270178,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 168,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F64-16ams_v7",
+      "pricePerHourUSD": 1.602586,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX16-8ms_v2",
+      "pricePerHourUSD": 0.463294,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 16,
+      "ram": 336,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX32-8mds_v2",
+      "pricePerHourUSD": 1.080895,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 672,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E8-4as_v5",
+      "pricePerHourUSD": 0.151536,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 8,
+      "ram": 64,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_E32-16s_v5",
+      "pricePerHourUSD": 0.860141,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 32,
+      "ram": 256,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F4-1amds_v7",
+      "pricePerHourUSD": 0.114576,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F16-4ams_v7",
+      "pricePerHourUSD": 0.400646,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_F4-2ams_v7",
+      "pricePerHourUSD": 0.100162,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_FX96-48mds_v2",
+      "pricePerHourUSD": 3.242501,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 96,
+      "ram": 1832,
+      "category": "compute"
+    },
+    {
+      "instance": "Standard_E64-32as_v5",
+      "pricePerHourUSD": 1.212288,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": 64,
+      "ram": 512,
+      "category": "memory"
+    },
+    {
+      "instance": "Standard_F64-32amds_v7",
+      "pricePerHourUSD": 1.833401,
+      "region": "eastus",
+      "os": "Windows",
+      "vcpu": null,
+      "ram": null,
+      "category": "compute"
+    }
+  ],
   "storage": {
     "aws": {
       "region": "us-east-1",
@@ -19425,8 +20308,29 @@
     },
     "azure": {
       "region": "eastus",
-      "ssd_monthly": {},
-      "hdd_monthly": {}
+      "ssd_monthly": {
+        "4": 0.361,
+        "8": 0.6,
+        "16": 0.12,
+        "32": 3.6,
+        "64": 4.8,
+        "128": 10.944,
+        "256": 21.888,
+        "512": 57.6,
+        "1024": 79.104,
+        "2048": 153.6,
+        "4096": 307.2
+      },
+      "hdd_monthly": {
+        "32": 1.536,
+        "64": 3.008,
+        "128": 5.888,
+        "256": 11.328,
+        "512": 21.76,
+        "1024": 40.96,
+        "2048": 77.824,
+        "4096": 143.36
+      }
     }
   }
 }
