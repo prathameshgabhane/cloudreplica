@@ -1,11 +1,11 @@
-// fetch-prices.js — Updated: AWS deduplication fix only
-// Notes:
-// - Keeps your existing structure and Azure logic intact.
-// - Ensures a single, cheapest AWS price per (instance + os + region).
-// - Safe for GitHub Actions (stable, deterministic output).
+// fetch-prices.js — CommonJS + Node18 native fetch; AWS dedupe fix
 
-import fs from "fs";
-import fetch from "node-fetch";
+const fs = require("fs");
+
+// Node 18+ has a global fetch. Guard just in case:
+if (typeof fetch !== "function") {
+  throw new Error("This script requires Node 18+ (global fetch).");
+}
 
 // ---------------------------
 // CONFIG
@@ -13,7 +13,7 @@ import fetch from "node-fetch";
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const AZURE_REGION = process.env.AZURE_REGION || "eastus";
 
-// The AWS families you actually want in the output
+// AWS families you want to keep
 const EC2_PREFIXES = ["m", "c", "r", "t", "x", "i", "z", "h"];
 
 // Modern Azure series (unchanged)
@@ -29,19 +29,17 @@ const ALLOWED_AZURE_SERIES = [
 // FETCH AWS PRICES (FIXED)
 // ---------------------------
 async function fetchAWSPrices() {
-  console.log(`[AWS] Fetching EC2 On-Demand prices for region: ${AWS_REGION}…`);
+  console.log(`[AWS] Fetching EC2 On-Demand prices for ${AWS_REGION}…`);
 
   const url = `https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/${AWS_REGION}/index.json`;
   const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`[AWS] Pricing API HTTP ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`[AWS] Pricing API HTTP ${res.status}`);
   const json = await res.json();
 
   const products = json.products || {};
   const terms = (json.terms && json.terms.OnDemand) || {};
 
-  // We'll collect only the cheapest row per key: (instance, OS, region)
+  // Keep only the cheapest per (instance, OS, region)
   const unique = {};
 
   for (const sku in products) {
@@ -52,10 +50,10 @@ async function fetchAWSPrices() {
     const instance = a.instanceType;
     if (!instance) continue;
 
-    // Family filter: m, c, r, t, x, i, z, h
+    // Family filter
     if (!EC2_PREFIXES.includes(instance[0])) continue;
 
-    // Support only Linux and Windows (ignore others like RHEL, SUSE, etc.)
+    // Only Linux & Windows
     const os = a.operatingSystem;
     if (!["Linux", "Windows"].includes(os)) continue;
 
@@ -65,7 +63,7 @@ async function fetchAWSPrices() {
     // Capacity status: AWS returns both "Used" and "Normal"
     if (!["Used", "Normal"].includes(a.capacitystatus)) continue;
 
-    // Find the On-Demand term for this SKU
+    // On-Demand term
     const skuTerms = terms[sku];
     if (!skuTerms) continue;
 
@@ -79,8 +77,7 @@ async function fetchAWSPrices() {
     if (!priceKey) continue;
 
     const dim = priceDimensions[priceKey];
-    const priceStr = dim?.pricePerUnit?.USD;
-    const price = priceStr ? parseFloat(priceStr) : NaN;
+    const price = Number(dim?.pricePerUnit?.USD);
     if (!Number.isFinite(price) || price <= 0) continue;
 
     // Extract vCPU and RAM (GiB)
@@ -108,13 +105,12 @@ async function fetchAWSPrices() {
 }
 
 // ---------------------------
-// FETCH AZURE VM PRICES (unchanged)
+// FETCH AZURE VM PRICES (unchanged shape)
 // ---------------------------
 async function fetchAzurePrices() {
   console.log(`[Azure] Fetching Retail prices for region: ${AZURE_REGION}…`);
 
   // Base retail prices (Linux + Windows)
-  // Keeping your existing approach; we dedupe to the cheapest per key as well.
   const baseUrl =
     `https://prices.azure.com/api/retail/prices?$filter=armRegionName eq '${AZURE_REGION}' and (endswith(skuName,'Linux') or endswith(skuName,'Windows'))`;
 
@@ -128,13 +124,14 @@ async function fetchAzurePrices() {
     next = page.NextPageLink || null;
   }
 
+  // Cheapest per (instance, OS, region)
   const uniq = {};
   for (const it of items) {
     const skuName = it?.skuName || "";
     const instance = skuName.split(" ")[0]; // e.g., Standard_D4s_v5
     if (!instance) continue;
 
-    // Only allow the modern series you care about (unchanged)
+    // Only allow the modern series you care about
     if (!ALLOWED_AZURE_SERIES.some(s => instance.startsWith(s))) continue;
 
     const os = /\bWindows\b/i.test(skuName) ? "Windows" : "Linux";
@@ -154,7 +151,7 @@ async function fetchAzurePrices() {
 
   const azureVMs = Object.values(uniq);
 
-  // Enrich with vCPU / RAM via ARM "vmSizes" (leave your enrichment logic as is)
+  // Enrich with vCPU / RAM via ARM vmSizes (best-effort)
   try {
     const vmSizesUrl =
       `https://management.azure.com/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute/locations/${AZURE_REGION}/vmSizes?api-version=2022-08-01`;
@@ -167,8 +164,6 @@ async function fetchAzurePrices() {
 
     const sizesJson = await sizesRes.json();
     const sizes = sizesJson?.value || [];
-
-    // simple lookup map
     const sizeMap = new Map(
       sizes.map(s => [String(s.name), { vcpu: s.numberOfCores, ram: (s.memoryInMB || 0) / 1024 }])
     );
@@ -194,7 +189,7 @@ async function fetchAzurePrices() {
 }
 
 // ---------------------------
-// FETCH AZURE STORAGE (unchanged)
+// FETCH AZURE STORAGE (unchanged shape)
 // ---------------------------
 async function fetchAzureStorage() {
   console.log(`[Azure] Fetching Managed Disk prices…`);
@@ -213,10 +208,9 @@ async function fetchAzureStorage() {
     const price = item.unitPrice;
     if (!Number.isFinite(price) || price <= 0) continue;
 
-    // Try to parse a size (GiB) if present in the name
+    // Extract size (GiB) if present
     const m = String(item.skuName || "").match(/(\d+)\s*GiB/i);
     if (!m) continue;
-
     const sizeGiB = m[1];
 
     if (/SSD/i.test(item.skuName)) {
@@ -233,7 +227,7 @@ async function fetchAzureStorage() {
 }
 
 // ---------------------------
-// MAIN (unchanged shape)
+// MAIN
 // ---------------------------
 async function main() {
   const [aws, azure, azureStorage] = await Promise.all([
@@ -245,7 +239,6 @@ async function main() {
   const final = {
     meta: {
       os: ["Linux", "Windows"],
-      // Meta derived from Azure (kept as-is)
       vcpu: [...new Set(azure.map(v => v.vcpu).filter(Number.isFinite))].sort((a, b) => a - b),
       ram: [...new Set(azure.map(v => v.ram).filter(Number.isFinite))].sort((a, b) => a - b)
     },
@@ -264,6 +257,7 @@ async function main() {
     }
   };
 
+  // Change this path if your repo expects data/prices.json
   fs.writeFileSync("prices.json", JSON.stringify(final, null, 2));
   console.log("✅ Successfully updated prices.json");
 }
