@@ -214,5 +214,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch {}
 
+  // Also hook the Compare button from JS (works even if inline handler is removed)
+  document.getElementById("compareBtn")?.addEventListener("click", () => compare(true));
+
   compare(false);
 });
