@@ -2,8 +2,20 @@
 // Node 18+ (global fetch)
 const fs = require("fs");
 const path = require("path");
-const { atomicWrite, dedupeCheapestByKey, warnAndSkipWriteOnEmpty, logStart, logDone, uniqSortedNums } = require("../lib/common");
-const { detectOsFromProductName, getResourceSkusMap, categorizeByInstanceName, widenAzureSeries } = require("../lib/azure");
+const {
+  atomicWrite,
+  dedupeCheapestByKey,
+  warnAndSkipWriteOnEmpty,
+  logStart,
+  logDone,
+  uniqSortedNums
+} = require("../lib/common");
+const {
+  detectOsFromProductName,
+  getResourceSkusMap,
+  categorizeByInstanceName,
+  widenAzureSeries
+} = require("../lib/azure");
 
 const OUT = path.join("data", "azure", "azure.prices.json");
 const REGION = process.env.AZURE_REGION || "eastus";
@@ -11,11 +23,15 @@ const REGION = process.env.AZURE_REGION || "eastus";
 async function fetchRetailPrices() {
   logStart(`[Azure] Retail (PAYG) ${REGION}`);
 
-  const base = `https://prices.azure.com/api/retail/prices` +
+  const base =
+    `https://prices.azure.com/api/retail/prices` +
     `?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${REGION}' and type eq 'Consumption'`;
 
   const items = [];
-  let next = base, pages = 0, MAX = 200;
+  let next = base,
+    pages = 0,
+    MAX = 200;
+
   while (next && pages < MAX) {
     const r = await fetch(next);
     if (!r.ok) throw new Error(`[Azure] Retail HTTP ${r.status}`);
@@ -32,7 +48,7 @@ async function main() {
   // 1) Retail prices
   const retail = await fetchRetailPrices();
 
-  // 2) Normalize + cheap-per (instance,region,OS)
+  // 2) Normalize + cheapest-per (instance, region, OS)
   const pre = [];
   for (const it of retail) {
     const skuName = it?.skuName || "";
@@ -57,32 +73,33 @@ async function main() {
   const cheapest = dedupeCheapestByKey(pre, r => `${r.instance}-${r.region}-${r.os}`);
   if (warnAndSkipWriteOnEmpty("Azure", cheapest)) return;
 
-  // 3) Enrich with vCPU/RAM via ResourceSkus
+  // 3) Enrich with vCPU/RAM via ResourceSkus (optional when token/subscription provided)
   const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
   const armToken = process.env.ARM_TOKEN;
 
-  const skuMap = (subscriptionId && armToken)
-    ? await getResourceSkusMap({ subscriptionId, region: REGION, armToken })
-    : new Map();
+  const skuMap =
+    subscriptionId && armToken
+      ? await getResourceSkusMap({ subscriptionId, region: REGION, armToken })
+      : new Map();
 
   for (const vm of cheapest) {
     const spec = skuMap.get(String(vm.instance).toLowerCase());
     vm.vcpu = spec?.vcpu ?? null;
-    vm.ram  = spec?.ram  ?? null; // GiB
+    vm.ram = spec?.ram ?? null; // GiB
     vm.category = categorizeByInstanceName(vm.instance);
   }
 
-  // 4) Build meta & storage (storage pulled from separate script if you like; or keep small defaults)
+  // 4) Build meta & storage (keep small defaults; you can wire a storage fetcher later)
   const meta = {
     os: ["Linux", "Windows"],
     vcpu: uniqSortedNums(cheapest.map(x => x.vcpu)),
-    ram:  uniqSortedNums(cheapest.map(x => x.ram))
+    ram: uniqSortedNums(cheapest.map(x => x.ram))
   };
 
-  // Keep minimal storage defaults here; replace with a fetcher if needed
   const storage = {
     region: REGION,
-    ssd_monthly: { 128: 9.6, 256: 19.2 },  // placeholders (ok to adjust)
+    // placeholders (OK to refine later)
+    ssd_monthly: { 128: 9.6, 256: 19.2 },
     hdd_monthly: { 128: 5.888, 256: 11.328 }
   };
 
