@@ -1,89 +1,68 @@
-// scripts/providers/azure.fetch.js
+// scripts/providers/aws.fetch.js
 // Node 18+ (global fetch)
-const fs = require("fs");
 const path = require("path");
 const { atomicWrite, dedupeCheapestByKey, warnAndSkipWriteOnEmpty, logStart, logDone, uniqSortedNums } = require("../lib/common");
-const { detectOsFromProductName, getResourceSkusMap, categorizeByInstanceName, widenAzureSeries } = require("../lib/azure");
+const { isWantedEc2Family } = require("../lib/aws");
 
-const OUT = path.join("data", "azure", "prices.json");
-const REGION = process.env.AZURE_REGION || "eastus";
+const REGION = process.env.AWS_REGION || "us-east-1";
+const OUT = path.join("data", "aws", "prices.json");
 
-async function fetchRetailPrices() {
-  logStart(`[Azure] Retail (PAYG) ${REGION}`);
-
-  const base = `https://prices.azure.com/api/retail/prices` +
-    `?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${REGION}' and type eq 'Consumption'`;
-
-  const items = [];
-  let next = base, pages = 0, MAX = 200;
-  while (next && pages < MAX) {
-    const r = await fetch(next);
-    if (!r.ok) throw new Error(`[Azure] Retail HTTP ${r.status}`);
-    const j = await r.json();
-    items.push(...(j.Items || []));
-    next = j.NextPageLink || null;
-    pages++;
-  }
-  logDone(`[Azure] Retail count=${items.length}`);
-  return items;
+async function fetchAwsIndex() {
+  logStart(`[AWS] EC2 PAYG ${REGION}`);
+  const url = `https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/${REGION}/index.json`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`[AWS] Pricing HTTP ${r.status}`);
+  const j = await r.json();
+  logDone(`[AWS] products=${Object.keys(j.products||{}).length}`);
+  return j;
 }
 
 async function main() {
-  // 1) Retail prices
-  const retail = await fetchRetailPrices();
+  const j = await fetchAwsIndex();
+  const products = j.products || {};
+  const onDemand = (j.terms && j.terms.OnDemand) || {};
 
-  // 2) Normalize + cheap-per (instance,region,OS)
-  const pre = [];
-  for (const it of retail) {
-    const skuName = it?.skuName || "";
-    const armSku = it?.armSkuName || "";
-    const instance = (skuName.split(" ")[0] || armSku || "").trim();
-    if (!instance) continue;
+  const rows = [];
+  for (const sku in products) {
+    const p = products[sku];
+    if (!p || p.productFamily !== "Compute Instance") continue;
+    const a = p.attributes || {};
+    const inst = a.instanceType;
+    if (!inst || !isWantedEc2Family(inst)) continue;
 
-    if (!widenAzureSeries(instance)) continue; // filter to main families
+    const os = a.operatingSystem;
+    if (!["Linux", "Windows"].includes(os)) continue;
+    if (a.tenancy !== "Shared") continue;
+    if (!["Used","Normal"].includes(a.capacitystatus)) continue;
 
-    const os = detectOsFromProductName(it.productName);
-    const price = Number(it.unitPrice);
+    const t = onDemand[sku];
+    const tKey = t ? Object.keys(t)[0] : null;
+    const dims = tKey ? t[tKey].priceDimensions : null;
+    const dKey = dims ? Object.keys(dims)[0] : null;
+    const dim = dKey ? dims[dKey] : null;
+    const price = Number(dim?.pricePerUnit?.USD);
     if (!Number.isFinite(price) || price <= 0) continue;
 
-    pre.push({
-      instance,
-      pricePerHourUSD: price,
-      region: REGION,
-      os
-    });
+    const vcpu = a.vcpu ? Number(a.vcpu) : null;
+    const ram  = a.memory ? Number(String(a.memory).replace(/ GiB/i,"")) : null;
+
+    rows.push({ instance: inst, vcpu, ram, pricePerHourUSD: price, region: REGION, os });
   }
 
-  const cheapest = dedupeCheapestByKey(pre, r => `${r.instance}-${r.region}-${r.os}`);
-  if (warnAndSkipWriteOnEmpty("Azure", cheapest)) return;
+  const cheapest = dedupeCheapestByKey(rows, r => `${r.instance}-${r.region}-${r.os}`);
+  if (warnAndSkipWriteOnEmpty("AWS", cheapest)) return;
 
-  // 3) Enrich with vCPU/RAM via ResourceSkus
-  const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
-  const armToken = process.env.ARM_TOKEN;
-
-  const skuMap = (subscriptionId && armToken)
-    ? await getResourceSkusMap({ subscriptionId, region: REGION, armToken })
-    : new Map();
-
-  for (const vm of cheapest) {
-    const spec = skuMap.get(String(vm.instance).toLowerCase());
-    vm.vcpu = spec?.vcpu ?? null;
-    vm.ram  = spec?.ram  ?? null; // GiB
-    vm.category = categorizeByInstanceName(vm.instance);
-  }
-
-  // 4) Build meta & storage (storage pulled from separate script if you like; or keep small defaults)
   const meta = {
-    os: ["Linux", "Windows"],
+    os: ["Linux","Windows"],
     vcpu: uniqSortedNums(cheapest.map(x => x.vcpu)),
     ram:  uniqSortedNums(cheapest.map(x => x.ram))
   };
 
-  // Keep minimal storage defaults here; replace with a fetcher if needed
   const storage = {
     region: REGION,
-    ssd_monthly: { 128: 9.6, 256: 19.2 },  // placeholders (ok to adjust)
-    hdd_monthly: { 128: 5.888, 256: 11.328 }
+    // small constants; replace with real fetcher if you like
+    ssd_per_gb_month: 0.08,
+    hdd_st1_per_gb_month: 0.045
   };
 
   const out = { meta, compute: cheapest, storage };
