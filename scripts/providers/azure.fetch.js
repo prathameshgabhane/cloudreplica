@@ -5,7 +5,7 @@ const path = require("path");
 const { atomicWrite, dedupeCheapestByKey, warnAndSkipWriteOnEmpty, logStart, logDone, uniqSortedNums } = require("../lib/common");
 const { detectOsFromProductName, getResourceSkusMap, categorizeByInstanceName, widenAzureSeries } = require("../lib/azure");
 
-const OUT = path.join("data", "azure", "prices.json");
+const OUT = path.join("data", "azure", "azure.prices.json");
 const REGION = process.env.AZURE_REGION || "eastus";
 
 async function fetchRetailPrices() {
