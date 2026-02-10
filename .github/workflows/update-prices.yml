@@ -2,7 +2,7 @@ name: Update Cloud Prices
 
 permissions:
   contents: write
-  id-token: write    # REQUIRED for Azure OIDC
+  id-token: write  # REQUIRED for Azure OIDC
 
 on:
   schedule:
@@ -12,14 +12,11 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ---------------------------
       # 1. Azure OIDC Login
-      # ---------------------------
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -27,53 +24,39 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ---------------------------
       # 2. Install Azure CLI (needed for ARM token)
-      # ---------------------------
       - name: Install Azure CLI
         uses: azure/CLI@v1
         with:
           inlineScript: |
             echo "Azure CLI installed"
 
-      # ---------------------------
       # 3. Generate ARM Access Token
-      # ---------------------------
       - name: Generate ARM Token
         run: |
           echo "Fetching ARM token..."
           ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
           echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
 
-      # ---------------------------
-      # 4. Setup Node
-      # ---------------------------
+      # 4. Setup Node (Node 18 has native fetch)
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install node-fetch
-        run: npm install node-fetch@2
-
-      # ---------------------------
       # 5. Run your updated price fetcher
-      # ---------------------------
       - name: Fetch AWS & Azure prices
         run: node scripts/fetch-prices.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
           AZURE_REGION: "eastus"
           AWS_REGION: "us-east-1"
-
-          # 🔥 REQUIRED FIX — These must be passed to Node.js
+          # Required for vmSizes enrichment (if your script calls ARM)
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
-      # ---------------------------
-      # 6. Commit updated prices.json
-      # ---------------------------
+      # 6. Commit updated data/prices.json
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
