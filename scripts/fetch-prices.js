@@ -2,7 +2,7 @@
 // Features:
 // - AWS de-duplication (cheapest per instance-OS-region)
 // - Azure de-duplication (cheapest per instance-OS-region)
-// - Best-effort Azure enrichment (vmSizes)
+// - Best-effort Azure enrichment via ResourceSkus (vCPUs, MemoryGB)
 // - FAILOVER: if AWS or Azure arrays are empty, DO NOT overwrite data/prices.json
 // - Atomic write: write to data/prices.tmp.json then rename to data/prices.json
 
@@ -20,17 +20,11 @@ if (typeof fetch !== "function") {
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const AZURE_REGION = process.env.AZURE_REGION || "eastus";
 
+// Families to keep for Azure (broad & forward-compatible)
+const ALLOWED_AZURE_SERIES = ["A", "B", "D", "E", "F", "L", "M", "N"];
+
 // AWS families to keep
 const EC2_PREFIXES = ["m", "c", "r", "t", "x", "i", "z", "h"];
-
-// Modern Azure series
-const ALLOWED_AZURE_SERIES = [
-  "D", "DS", "Dsv3", "Dsv4", "Dv5", "Dv6",
-  "E", "Ev5", "Ev6",
-  "Fsv2",
-  "Lsv3",
-  "Dplsv5"
-];
 
 // ---------------------------
 // FETCH AWS PRICES (CHEAPEST)
@@ -46,8 +40,7 @@ async function fetchAWSPrices() {
   const products = json.products || {};
   const terms = (json.terms && json.terms.OnDemand) || {};
 
-  // Keep only the cheapest per (instance, OS, region)
-  const unique = {};
+  const unique = {}; // keep cheapest per (instance, OS, region)
 
   for (const sku in products) {
     const prod = products[sku];
@@ -90,14 +83,7 @@ async function fetchAWSPrices() {
 
     const key = `${instance}-${os}-${AWS_REGION}`;
     if (!unique[key] || price < unique[key].pricePerHourUSD) {
-      unique[key] = {
-        instance,
-        vcpu,
-        ram,
-        pricePerHourUSD: price,
-        region: AWS_REGION,
-        os
-      };
+      unique[key] = { instance, vcpu, ram, pricePerHourUSD: price, region: AWS_REGION, os };
     }
   }
 
@@ -112,17 +98,15 @@ async function fetchAWSPrices() {
 async function fetchAzurePrices() {
   console.log(`[Azure] Fetching Retail prices for region: ${AZURE_REGION}…`);
 
-  // Base retail prices (Linux + Windows)
-  // We treat empty result as a failure for failover purposes.
+  // Pay-as-you-go compute meters; filters are case-sensitive in newer API versions.
+  // serviceName eq 'Virtual Machines', region match, 'Consumption' (PAYG).
+  // We split OS later via productName (Windows tokens).
   const baseUrl =
     `https://prices.azure.com/api/retail/prices` +
-    `?$filter=armRegionName eq '${AZURE_REGION}' and type eq 'Consumption'` +
-    ` and (endswith(skuName,'Linux') or endswith(skuName,'Windows'))`;
+    `?$filter=serviceName eq 'Virtual Machines' and armRegionName eq '${AZURE_REGION}' and type eq 'Consumption'`;
 
   const items = [];
   let next = baseUrl;
-
-  // Defensive pagination with a page cap to avoid infinite loops
   let pages = 0;
   const MAX_PAGES = 200;
 
@@ -135,7 +119,6 @@ async function fetchAzurePrices() {
     pages++;
   }
 
-  // If Retail returned nothing, let caller decide failover
   if (!items.length) {
     console.warn("[Azure] Retail API returned 0 items.");
     return [];
@@ -145,24 +128,25 @@ async function fetchAzurePrices() {
   const uniq = {};
   for (const it of items) {
     const skuName = it?.skuName || "";
-    const instance = skuName.split(" ")[0]; // e.g., Standard_D4s_v5
+    const armSkuName = it?.armSkuName || "";
+    const rawInstance = (skuName.split(" ")[0] || armSkuName || "").trim(); // e.g., Standard_D4s_v5
+    const instance = rawInstance || armSkuName;
     if (!instance) continue;
 
-    // Only allow modern series
-    if (!ALLOWED_AZURE_SERIES.some(s => instance.startsWith(s))) continue;
+    // Allowed series check by first letter
+    const instLower = instance.toLowerCase();
+    const lead = (instLower.startsWith("standard_") ? instLower.slice(9) : instLower)[0];
+    if (!lead || !ALLOWED_AZURE_SERIES.includes(lead.toUpperCase())) continue;
 
-    const os = /\bWindows\b/i.test(skuName) ? "Windows" : "Linux";
+    // OS via productName (Windows token)
+    const os = /windows/i.test(it.productName || "") ? "Windows" : "Linux"; // <-- reliable split
+
     const price = it?.unitPrice;
     if (!Number.isFinite(price) || price <= 0) continue;
 
     const key = `${instance}-${os}-${AZURE_REGION}`;
     if (!uniq[key] || price < uniq[key].pricePerHourUSD) {
-      uniq[key] = {
-        instance,
-        pricePerHourUSD: price,
-        region: AZURE_REGION,
-        os
-      };
+      uniq[key] = { instance, pricePerHourUSD: price, region: AZURE_REGION, os };
     }
   }
 
@@ -170,7 +154,7 @@ async function fetchAzurePrices() {
 }
 
 // ---------------------------
-// AZURE ENRICHMENT (best-effort)
+// AZURE ENRICHMENT via ResourceSkus (vCPUs, MemoryGB)
 // ---------------------------
 async function enrichAzureVmSizes(azureVMs) {
   if (!azureVMs.length) return azureVMs;
@@ -184,48 +168,64 @@ async function enrichAzureVmSizes(azureVMs) {
       return azureVMs;
     }
 
-    const vmSizesUrl =
+    // Complete per-region SKU list with capabilities (vCPUs, MemoryGB)
+    const url =
       `https://management.azure.com/subscriptions/${subscriptionId}` +
-      `/providers/Microsoft.Compute/locations/${AZURE_REGION}/vmSizes?api-version=2022-08-01`;
+      `/providers/Microsoft.Compute/skus?api-version=2021-07-01&$filter=location eq '${AZURE_REGION}'`;
 
-    const sizesRes = await fetch(vmSizesUrl, {
-      headers: {
-        "Authorization": `Bearer ${armToken}`,
-        "Content-Type": "application/json"
+    const all = [];
+    let next = url, pages = 0, MAX = 80;
+
+    while (next && pages < MAX) {
+      const res = await fetch(next, {
+        headers: { Authorization: `Bearer ${armToken}` }
+      });
+      if (!res.ok) {
+        console.warn(`[Azure] ResourceSkus HTTP ${res.status} — enrichment skipped`);
+        return azureVMs;
       }
-    });
-
-    if (!sizesRes.ok) {
-      console.warn(`[Azure] vmSizes API HTTP ${sizesRes.status} — enrichment skipped`);
-      return azureVMs;
+      const j = await res.json();
+      all.push(...(j.value || []));
+      next = j.nextLink || null;
+      pages++;
     }
 
-    const sizesJson = await sizesRes.json();
-    const sizes = sizesJson?.value || [];
-    const sizeMap = new Map(
-      sizes.map(s => [String(s.name), { vcpu: s.numberOfCores, ram: (s.memoryInMB || 0) / 1024 }])
-    );
+    // Build map: SKU name -> { vcpu, ram }
+    const skuMap = new Map();
+    for (const sku of all) {
+      if (sku.resourceType !== "virtualMachines") continue;
+      const caps = Object.fromEntries((sku.capabilities || []).map(x => [x.name, x.value]));
+      const vcpus = caps.vCPUs ? Number(caps.vCPUs) : null;
+      const memGB = caps.MemoryGB ? Number(caps.MemoryGB) : null;
+      if (vcpus || memGB) skuMap.set(String(sku.name).toLowerCase(), { vcpu: vcpus, ram: memGB });
+    }
 
+    // Fill specs; assign a simple category if missing
     for (const vm of azureVMs) {
-      const spec = sizeMap.get(vm.instance);
+      const key = String(vm.instance || "").toLowerCase();
+      const spec = skuMap.get(key);
       if (spec) {
-        vm.vcpu = spec.vcpu;
-        vm.ram = spec.ram;
+        vm.vcpu = vm.vcpu ?? spec.vcpu ?? null;
+        vm.ram  = vm.ram  ?? spec.ram  ?? null;
+      }
+
+      if (!vm.category) {
+        const n = key.startsWith("standard_") ? key.slice(9) : key;
+        const first = n[0];
         vm.category =
-          vm.instance.startsWith("D") ? "general" :
-          vm.instance.startsWith("E") ? "memory" :
-          vm.instance.startsWith("F") ? "compute" :
-          "other";
+          first === "d" ? "general" :
+          first === "e" ? "memory"  :
+          first === "f" ? "compute" : "other";
       }
     }
   } catch (e) {
-    console.warn(`[Azure] vmSizes enrichment error — skipped.`, e?.message || e);
+    console.warn(`[Azure] ResourceSkus enrichment error — skipped.`, e?.message || e);
   }
   return azureVMs;
 }
 
 // ---------------------------
-// AZURE STORAGE (unchanged)
+// AZURE STORAGE (unchanged pattern)
 // ---------------------------
 async function fetchAzureStorage() {
   console.log(`[Azure] Fetching Managed Disk prices…`);
@@ -257,10 +257,7 @@ async function fetchAzureStorage() {
     }
   }
 
-  return {
-    ssd_monthly: ssd,
-    hdd_monthly: hdd
-  };
+  return { ssd_monthly: ssd, hdd_monthly: hdd };
 }
 
 // ---------------------------
@@ -278,7 +275,7 @@ function writeAtomic(outPath, data) {
 // MAIN with FAILOVER
 // ---------------------------
 async function main() {
-  // Fetch in parallel (Azure enrichment depends on azure list later)
+  // Fetch in parallel
   const [aws, azureRaw, azureStorage] = await Promise.all([
     fetchAWSPrices(),
     fetchAzurePrices(),
@@ -288,25 +285,24 @@ async function main() {
     })
   ]);
 
-  // ---- FAILOVER POLICY ----
-  // If Azure OR AWS list is empty, DO NOT overwrite existing data/prices.json.
+  // FAILOVER POLICY: do not overwrite if a provider failed
   if (!aws.length) {
     console.warn("⚠️ FAILOVER: AWS list is empty. Skipping write to avoid overwriting last-known-good data.");
-    return; // exit 0
+    return;
   }
   if (!azureRaw.length) {
     console.warn("⚠️ FAILOVER: Azure list is empty. Skipping write to avoid overwriting last-known-good data.");
-    return; // exit 0
+    return;
   }
 
-  // Enrich Azure (best-effort, never throws)
+  // Enrich Azure (best-effort)
   const azure = await enrichAzureVmSizes(azureRaw);
 
   const final = {
     meta: {
       os: ["Linux", "Windows"],
       vcpu: [...new Set(azure.map(v => v.vcpu).filter(Number.isFinite))].sort((a, b) => a - b),
-      ram: [...new Set(azure.map(v => v.ram).filter(Number.isFinite))].sort((a, b) => a - b)
+      ram:  [...new Set(azure.map(v => v.ram ).filter(Number.isFinite))].sort((a, b) => a - b)
     },
     aws,
     azure,
@@ -330,7 +326,5 @@ async function main() {
 
 main().catch(err => {
   console.error("❌ Error in fetch-prices:", err?.stack || err);
-  // On *unexpected* fatal errors we still exit 1,
-  // but the failover paths return early with code 0.
   process.exit(1);
 });
