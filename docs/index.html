@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8" />
   <title>Cloud Price Compare (AWS vs Azure)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- FIXED: correct stylesheet include -->
-  <link rel="stylesheet" href="style.css">
+  <!-- stylesheet -->
+  <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
@@ -35,8 +35,8 @@
         <div class="info-pop" id="osInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
-            <strong>OS selection</strong><br/>
-            • <em>Linux</em>: Standard Linux VM rates (no OS license).<br/>
+            <strong>OS selection</strong><br />
+            • <em>Linux</em>: Standard Linux VM rates (no OS license).<br />
             • <em>Windows</em>: Windows PAYG (license included).
           </div>
         </div>
@@ -92,8 +92,8 @@
         <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
-            <strong>Storage comparison</strong><br/>
-            • SSD → AWS gp3, Azure Standard SSD<br/>
+            <strong>Storage comparison</strong><br />
+            • SSD → AWS gp3, Azure Standard SSD<br />
             • HDD → AWS st1, Azure Standard HDD
           </div>
         </div>
@@ -139,11 +139,10 @@
         <span id="awsStoragePriceHr">–</span>
       </div>
       <div class="split">
-        <span class="label">≈ Storage Monthly:</span>
-        <span id="awsStorageMonthly">–</span>
+        <span class="label">≈ Storage Monthly:</spanthly">–</span>
       </div>
 
-      <hr class="divider"/>
+      <hr class="divider" />
 
       <div class="split total">
         <span class="label">Total Price/hr:</span>
@@ -187,7 +186,7 @@
         <span id="azStorageMonthly">–</span>
       </div>
 
-      <hr class="divider"/>
+      <hr class="divider" />
 
       <div class="split total">
         <span class="label">Total Price/hr:</span>
@@ -201,8 +200,8 @@
 
   </div>
 
-  <!-- FIXED: correct script include -->
-  <script src="script.js"></script>
+  <!-- IMPORTANT: this MUST be type="module" for ESM imports -->
+  script.js</script>
 
 </body>
 </html>
