@@ -1,0 +1,19 @@
+name: Update All Cloud Prices
+permissions:
+  contents: write
+  id-token: write
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "30 */6 * * *"
+
+jobs:
+  azure:
+    uses: ./.github/workflows/update-azure.yml
+    secrets: inherit
+
+  aws:
+    needs: azure
+    uses: ./.github/workflows/update-aws.yml
+    secrets: inherit
