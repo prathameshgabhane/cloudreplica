@@ -1,4 +1,10 @@
-// scripts/fetch-prices.js — CommonJS + Node18 native fetch; AWS dedupe fix; writes to data/prices.json
+// scripts/fetch-prices.js — CommonJS + Node18 native fetch
+// Features:
+// - AWS de-duplication (cheapest per instance-OS-region)
+// - Azure de-duplication (cheapest per instance-OS-region)
+// - Best-effort Azure enrichment (vmSizes)
+// - FAILOVER: if AWS or Azure arrays are empty, DO NOT overwrite data/prices.json
+// - Atomic write: write to data/prices.tmp.json then rename to data/prices.json
 
 const fs = require("fs");
 const path = require("path");
@@ -14,10 +20,10 @@ if (typeof fetch !== "function") {
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const AZURE_REGION = process.env.AZURE_REGION || "eastus";
 
-// AWS families you want to keep
+// AWS families to keep
 const EC2_PREFIXES = ["m", "c", "r", "t", "x", "i", "z", "h"];
 
-// Modern Azure series (unchanged)
+// Modern Azure series
 const ALLOWED_AZURE_SERIES = [
   "D", "DS", "Dsv3", "Dsv4", "Dv5", "Dv6",
   "E", "Ev5", "Ev6",
@@ -27,7 +33,7 @@ const ALLOWED_AZURE_SERIES = [
 ];
 
 // ---------------------------
-// FETCH AWS PRICES (FIXED)
+// FETCH AWS PRICES (CHEAPEST)
 // ---------------------------
 async function fetchAWSPrices() {
   console.log(`[AWS] Fetching EC2 On-Demand prices for ${AWS_REGION}…`);
@@ -51,29 +57,26 @@ async function fetchAWSPrices() {
     const instance = a.instanceType;
     if (!instance) continue;
 
-    // Family filter
+    // family filter
     if (!EC2_PREFIXES.includes(instance[0])) continue;
 
-    // Linux & Windows only
+    // only Linux & Windows
     const os = a.operatingSystem;
     if (!["Linux", "Windows"].includes(os)) continue;
 
-    // Shared tenancy only
+    // shared tenancy only
     if (a.tenancy !== "Shared") continue;
 
-    // Capacity status accepted: "Used" or "Normal"
+    // capacity status accepted
     if (!["Used", "Normal"].includes(a.capacitystatus)) continue;
 
     // On-Demand term
     const skuTerms = terms[sku];
     if (!skuTerms) continue;
-
     const termKey = Object.keys(skuTerms)[0];
     if (!termKey) continue;
-
     const priceDimensions = skuTerms[termKey].priceDimensions;
     if (!priceDimensions) continue;
-
     const priceKey = Object.keys(priceDimensions)[0];
     if (!priceKey) continue;
 
@@ -81,13 +84,11 @@ async function fetchAWSPrices() {
     const price = Number(dim?.pricePerUnit?.USD);
     if (!Number.isFinite(price) || price <= 0) continue;
 
-    // vCPU and RAM (GiB)
+    // specs
     const vcpu = a.vcpu ? parseInt(a.vcpu, 10) : undefined;
     const ram = a.memory ? parseFloat(String(a.memory).replace(/ GiB/i, "")) : undefined;
 
     const key = `${instance}-${os}-${AWS_REGION}`;
-
-    // ✅ Keep only the *cheapest* price per key
     if (!unique[key] || price < unique[key].pricePerHourUSD) {
       unique[key] = {
         instance,
@@ -106,33 +107,48 @@ async function fetchAWSPrices() {
 }
 
 // ---------------------------
-// FETCH AZURE VM PRICES (dedupe to cheapest)
+// FETCH AZURE PRICES (CHEAPEST)
 // ---------------------------
 async function fetchAzurePrices() {
   console.log(`[Azure] Fetching Retail prices for region: ${AZURE_REGION}…`);
 
   // Base retail prices (Linux + Windows)
+  // We treat empty result as a failure for failover purposes.
   const baseUrl =
-    `https://prices.azure.com/api/retail/prices?$filter=armRegionName eq '${AZURE_REGION}' and (endswith(skuName,'Linux') or endswith(skuName,'Windows'))`;
+    `https://prices.azure.com/api/retail/prices` +
+    `?$filter=armRegionName eq '${AZURE_REGION}' and type eq 'Consumption'` +
+    ` and (endswith(skuName,'Linux') or endswith(skuName,'Windows'))`;
 
   const items = [];
   let next = baseUrl;
-  while (next) {
+
+  // Defensive pagination with a page cap to avoid infinite loops
+  let pages = 0;
+  const MAX_PAGES = 200;
+
+  while (next && pages < MAX_PAGES) {
     const resp = await fetch(next);
     if (!resp.ok) throw new Error(`[Azure] Retail API HTTP ${resp.status}`);
     const page = await resp.json();
     items.push(...(page.Items || []));
     next = page.NextPageLink || null;
+    pages++;
   }
 
-  // Cheapest per (instance, OS, region)
+  // If Retail returned nothing, let caller decide failover
+  if (!items.length) {
+    console.warn("[Azure] Retail API returned 0 items.");
+    return [];
+  }
+
+  // Keep cheapest per (instance, OS, region)
   const uniq = {};
   for (const it of items) {
     const skuName = it?.skuName || "";
     const instance = skuName.split(" ")[0]; // e.g., Standard_D4s_v5
     if (!instance) continue;
 
-    // Only allow the modern series you care about
+    // Only allow modern series
     if (!ALLOWED_AZURE_SERIES.some(s => instance.startsWith(s))) continue;
 
     const os = /\bWindows\b/i.test(skuName) ? "Windows" : "Linux";
@@ -150,14 +166,35 @@ async function fetchAzurePrices() {
     }
   }
 
-  const azureVMs = Object.values(uniq);
+  return Object.values(uniq);
+}
 
-  // Enrich with vCPU / RAM via ARM vmSizes (best-effort)
+// ---------------------------
+// AZURE ENRICHMENT (best-effort)
+// ---------------------------
+async function enrichAzureVmSizes(azureVMs) {
+  if (!azureVMs.length) return azureVMs;
+
   try {
-    const vmSizesUrl =
-      `https://management.azure.com/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute/locations/${AZURE_REGION}/vmSizes?api-version=2022-08-01`;
+    const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
+    const armToken = process.env.ARM_TOKEN;
 
-    const sizesRes = await fetch(vmSizesUrl);
+    if (!subscriptionId || !armToken) {
+      console.warn("[Azure] Missing AZURE_SUBSCRIPTION_ID or ARM_TOKEN — enrichment skipped.");
+      return azureVMs;
+    }
+
+    const vmSizesUrl =
+      `https://management.azure.com/subscriptions/${subscriptionId}` +
+      `/providers/Microsoft.Compute/locations/${AZURE_REGION}/vmSizes?api-version=2022-08-01`;
+
+    const sizesRes = await fetch(vmSizesUrl, {
+      headers: {
+        "Authorization": `Bearer ${armToken}`,
+        "Content-Type": "application/json"
+      }
+    });
+
     if (!sizesRes.ok) {
       console.warn(`[Azure] vmSizes API HTTP ${sizesRes.status} — enrichment skipped`);
       return azureVMs;
@@ -184,19 +221,18 @@ async function fetchAzurePrices() {
   } catch (e) {
     console.warn(`[Azure] vmSizes enrichment error — skipped.`, e?.message || e);
   }
-
-  console.log(`[Azure] Final unique rows: ${azureVMs.length}`);
   return azureVMs;
 }
 
 // ---------------------------
-// FETCH AZURE STORAGE (unchanged shape)
+// AZURE STORAGE (unchanged)
 // ---------------------------
 async function fetchAzureStorage() {
   console.log(`[Azure] Fetching Managed Disk prices…`);
 
   const url =
-    `https://prices.azure.com/api/retail/prices?$filter=armRegionName eq '${AZURE_REGION}' and contains(skuName,'Disk')`;
+    `https://prices.azure.com/api/retail/prices` +
+    `?$filter=armRegionName eq '${AZURE_REGION}' and contains(skuName,'Disk') and type eq 'Consumption'`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`[Azure] Storage pricing HTTP ${res.status}`);
@@ -228,14 +264,43 @@ async function fetchAzureStorage() {
 }
 
 // ---------------------------
-// MAIN
+// ATOMIC WRITE HELPER
+// ---------------------------
+function writeAtomic(outPath, data) {
+  const dir = path.dirname(outPath);
+  const tmpPath = path.join(dir, "prices.tmp.json");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+  fs.renameSync(tmpPath, outPath);
+}
+
+// ---------------------------
+// MAIN with FAILOVER
 // ---------------------------
 async function main() {
-  const [aws, azure, azureStorage] = await Promise.all([
+  // Fetch in parallel (Azure enrichment depends on azure list later)
+  const [aws, azureRaw, azureStorage] = await Promise.all([
     fetchAWSPrices(),
     fetchAzurePrices(),
-    fetchAzureStorage()
+    fetchAzureStorage().catch(e => {
+      console.warn("[Azure] Storage fetch failed — continuing without storage.", e?.message || e);
+      return { ssd_monthly: {}, hdd_monthly: {} };
+    })
   ]);
+
+  // ---- FAILOVER POLICY ----
+  // If Azure OR AWS list is empty, DO NOT overwrite existing data/prices.json.
+  if (!aws.length) {
+    console.warn("⚠️ FAILOVER: AWS list is empty. Skipping write to avoid overwriting last-known-good data.");
+    return; // exit 0
+  }
+  if (!azureRaw.length) {
+    console.warn("⚠️ FAILOVER: Azure list is empty. Skipping write to avoid overwriting last-known-good data.");
+    return; // exit 0
+  }
+
+  // Enrich Azure (best-effort, never throws)
+  const azure = await enrichAzureVmSizes(azureRaw);
 
   const final = {
     meta: {
@@ -258,16 +323,14 @@ async function main() {
     }
   };
 
-  // Ensure data/ exists, then write
   const outPath = "data/prices.json";
-  const dir = path.dirname(outPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  fs.writeFileSync(outPath, JSON.stringify(final, null, 2));
+  writeAtomic(outPath, final);
   console.log(`✅ Successfully updated ${outPath}`);
 }
 
 main().catch(err => {
   console.error("❌ Error in fetch-prices:", err?.stack || err);
+  // On *unexpected* fatal errors we still exit 1,
+  // but the failover paths return early with code 0.
   process.exit(1);
 });
