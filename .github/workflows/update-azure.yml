@@ -12,6 +12,7 @@ on:
 jobs:
   update-azure:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # recommended: stop a stuck run
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
