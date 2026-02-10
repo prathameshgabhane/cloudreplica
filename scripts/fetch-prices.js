@@ -1,8 +1,9 @@
-// fetch-prices.js — CommonJS + Node18 native fetch; AWS dedupe fix
+// scripts/fetch-prices.js — CommonJS + Node18 native fetch; AWS dedupe fix; writes to data/prices.json
 
 const fs = require("fs");
+const path = require("path");
 
-// Node 18+ has a global fetch. Guard just in case:
+// Require Node 18+ (global fetch)
 if (typeof fetch !== "function") {
   throw new Error("This script requires Node 18+ (global fetch).");
 }
@@ -53,14 +54,14 @@ async function fetchAWSPrices() {
     // Family filter
     if (!EC2_PREFIXES.includes(instance[0])) continue;
 
-    // Only Linux & Windows
+    // Linux & Windows only
     const os = a.operatingSystem;
     if (!["Linux", "Windows"].includes(os)) continue;
 
     // Shared tenancy only
     if (a.tenancy !== "Shared") continue;
 
-    // Capacity status: AWS returns both "Used" and "Normal"
+    // Capacity status accepted: "Used" or "Normal"
     if (!["Used", "Normal"].includes(a.capacitystatus)) continue;
 
     // On-Demand term
@@ -80,13 +81,13 @@ async function fetchAWSPrices() {
     const price = Number(dim?.pricePerUnit?.USD);
     if (!Number.isFinite(price) || price <= 0) continue;
 
-    // Extract vCPU and RAM (GiB)
+    // vCPU and RAM (GiB)
     const vcpu = a.vcpu ? parseInt(a.vcpu, 10) : undefined;
     const ram = a.memory ? parseFloat(String(a.memory).replace(/ GiB/i, "")) : undefined;
 
     const key = `${instance}-${os}-${AWS_REGION}`;
 
-    // ✅ DEDUPLICATION FIX: keep only the *cheapest* price per key
+    // ✅ Keep only the *cheapest* price per key
     if (!unique[key] || price < unique[key].pricePerHourUSD) {
       unique[key] = {
         instance,
@@ -105,7 +106,7 @@ async function fetchAWSPrices() {
 }
 
 // ---------------------------
-// FETCH AZURE VM PRICES (unchanged shape)
+// FETCH AZURE VM PRICES (dedupe to cheapest)
 // ---------------------------
 async function fetchAzurePrices() {
   console.log(`[Azure] Fetching Retail prices for region: ${AZURE_REGION}…`);
@@ -257,9 +258,13 @@ async function main() {
     }
   };
 
-  // Change this path if your repo expects data/prices.json
-  fs.writeFileSync("prices.json", JSON.stringify(final, null, 2));
-  console.log("✅ Successfully updated prices.json");
+  // Ensure data/ exists, then write
+  const outPath = "data/prices.json";
+  const dir = path.dirname(outPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  fs.writeFileSync(outPath, JSON.stringify(final, null, 2));
+  console.log(`✅ Successfully updated ${outPath}`);
 }
 
 main().catch(err => {
