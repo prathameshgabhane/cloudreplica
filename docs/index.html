@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Cloud Price Compare (AWS vs Azure)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <!-- FIXED: correct stylesheet include -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <h2>Live Cloud Price Compare</h2>
+
+  <div class="filters">
+    <div class="row">
+
+      <!-- OS with tooltip -->
+      <div>
+        <label for="os" class="label-with-info">
+          OS
+          <button
+            type="button"
+            class="info-badge"
+            id="osInfoBtn"
+            aria-label="OS selection info"
+            aria-expanded="false"
+            aria-controls="osInfoTip">
+            i
+          </button>
+        </label>
+
+        <select id="os"></select>
+
+        <div class="info-pop" id="osInfoTip" role="tooltip" aria-hidden="true">
+          <div class="info-pop__arrow"></div>
+          <div class="info-pop__content">
+            <strong>OS selection</strong><br/>
+            • <em>Linux</em>: Standard Linux VM rates (no OS license).<br/>
+            • <em>Windows</em>: Windows PAYG (license included).
+          </div>
+        </div>
+      </div>
+
+      <!-- vCPU -->
+      <div>
+        <label for="cpu">vCPU</label>
+        <select id="cpu"></select>
+      </div>
+
+      <!-- RAM -->
+      <div>
+        <label for="ram">RAM (GiB)</label>
+        <select id="ram"></select>
+      </div>
+
+      <!-- Storage Amount -->
+      <div>
+        <label for="storageAmt">Storage (GB)</label>
+        <select id="storageAmt">
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64">64</option>
+          <option value="128">128</option>
+          <option value="256">256</option>
+          <option value="512">512</option>
+        </select>
+      </div>
+
+      <!-- Storage Type with tooltip -->
+      <div>
+        <label for="storageType" class="label-with-info">
+          Storage Type
+          <button
+            type="button"
+            class="info-badge"
+            id="storageInfoBtn"
+            aria-label="Storage comparison info"
+            aria-expanded="false"
+            aria-controls="storageInfoTip">
+            i
+          </button>
+        </label>
+
+        <select id="storageType">
+          <option value="hdd">HDD</option>
+          <option value="ssd">SSD</option>
+        </select>
+
+        <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
+          <div class="info-pop__arrow"></div>
+          <div class="info-pop__content">
+            <strong>Storage comparison</strong><br/>
+            • SSD → AWS gp3, Azure Standard SSD<br/>
+            • HDD → AWS st1, Azure Standard HDD
+          </div>
+        </div>
+      </div>
+
+      <!-- Compare button -->
+      <div>
+        <button id="compareBtn" onclick="compare(true)">Compare</button>
+      </div>
+
+    </div>
+
+    <div id="status" class="status">Ready</div>
+  </div>
+
+  <div class="results">
+
+    <!-- AWS Panel -->
+    <div class="panel">
+      <h3>AWS EC2</h3>
+
+      <div class="family-filter" id="awsFamilyWrap" style="display:none;">
+        <label for="awsFamily">Family</label>
+        <select id="awsFamily" aria-label="AWS family">
+          <option value="">Auto (Recommended)</option>
+          <option value="general">General</option>
+          <option value="compute">Compute</option>
+          <option value="memory">Memory</option>
+        </select>
+      </div>
+
+      <p id="awsInstance"><strong>Recommended Instance:</strong> –</p>
+      <p id="awsCpu">vCPU: –</p>
+      <p id="awsRam">RAM: –</p>
+
+      <p class="muted" id="awsStorageSel">Storage: –</p>
+
+      <p id="awsPrice">Price/hr: –</p>
+      <p id="awsMonthly">≈ Monthly: –</p>
+
+      <div class="split">
+        <span class="label">Storage Price/hr:</span>
+        <span id="awsStoragePriceHr">–</span>
+      </div>
+      <div class="split">
+        <span class="label">≈ Storage Monthly:</span>
+        <span id="awsStorageMonthly">–</span>
+      </div>
+
+      <hr class="divider"/>
+
+      <div class="split total">
+        <span class="label">Total Price/hr:</span>
+        <span id="awsTotalHr">–</span>
+      </div>
+      <div class="split total">
+        <span class="label">≈ Total Monthly:</span>
+        <span id="awsTotalMonthly">–</span>
+      </div>
+    </div>
+
+    <!-- Azure Panel -->
+    <div class="panel">
+      <h3>Azure VM</h3>
+
+      <div class="family-filter" id="azFamilyWrap" style="display:none;">
+        <label for="azFamily">Family</label>
+        <select id="azFamily" aria-label="Azure family">
+          <option value="">Auto (Recommended)</option>
+          <option value="general">General</option>
+          <option value="compute">Compute</option>
+          <option value="memory">Memory</option>
+        </select>
+      </div>
+
+      <p id="azInstance"><strong>Recommended VM Size:</strong> –</p>
+      <p id="azCpu">vCPU: –</p>
+      <p id="azRam">RAM: –</p>
+
+      <p class="muted" id="azStorageSel">Storage: –</p>
+
+      <p id="azPrice">Price/hr: –</p>
+      <p id="azMonthly">≈ Monthly: –</p>
+
+      <div class="split">
+        <span class="label">Storage Price/hr:</span>
+        <span id="azStoragePriceHr">–</span>
+      </div>
+      <div class="split">
+        <span class="label">≈ Storage Monthly:</span>
+        <span id="azStorageMonthly">–</span>
+      </div>
+
+      <hr class="divider"/>
+
+      <div class="split total">
+        <span class="label">Total Price/hr:</span>
+        <span id="azTotalHr">–</span>
+      </div>
+      <div class="split total">
+        <span class="label">≈ Total Monthly:</span>
+        <span id="azTotalMonthly">–</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FIXED: correct script include -->
+  <script src="script.js"></script>
+
+</body>
+</html>
