@@ -1,5 +1,5 @@
 // scripts/fetch-prices.js (CommonJS)
-// Azure PAYG (Ubuntu + Windows) by modern series only, OS-strict, deduped;
+// Azure PAYG (Linux + Windows) by modern series only, OS-strict, de-duped;
 // ARM "/vmSizes" enrichment for vCPU/RAM; AWS unchanged.
 
 const fetch = require("node-fetch");
@@ -10,10 +10,15 @@ const fs = require("fs");
 ===================================== */
 const AWS_REGION   = process.env.AWS_REGION   || "us-east-1";
 const AZURE_REGION = process.env.AZURE_REGION || "eastus";
-const ARM_TOKEN    = process.env.ARM_TOKEN; // set by GitHub OIDC workflow
+const ARM_TOKEN    = process.env.ARM_TOKEN;              // Azure AD OIDC token
+const AZ_SUB_ID    = process.env.AZURE_SUBSCRIPTION_ID;  // subscription for /vmSizes
 
 if (!ARM_TOKEN) {
-  console.error("❌ ARM_TOKEN missing — GitHub OIDC workflow must export it.");
+  console.error("❌ ARM_TOKEN missing — CI must export it (OIDC to Azure).");
+  process.exit(1);
+}
+if (!AZ_SUB_ID) {
+  console.error("❌ AZURE_SUBSCRIPTION_ID missing — required for /vmSizes.");
   process.exit(1);
 }
 
@@ -27,18 +32,22 @@ function isSharedUsed(attrs) {
   const cap = String(attrs.capacitystatus || "").toLowerCase();
   return ten === "shared" && pre === "na" && cap === "used";
 }
+
 function isAwsLinux(attrs) {
   return String(attrs.operatingSystem || "").toLowerCase() === "linux" && isSharedUsed(attrs);
 }
+
 function isAwsWindows(attrs) {
   return String(attrs.operatingSystem || "").toLowerCase() === "windows" && isSharedUsed(attrs);
 }
+
 function isWantedAwsFamily(instanceType) {
   if (!instanceType) return false;
   const s = String(instanceType).toLowerCase();
   // general: m/t ; compute: c ; memory: r/x/z
   return /^[mtcrxz]/.test(s);
 }
+
 function pickHourlyUsd(onDemandTerms) {
   if (!onDemandTerms) return null;
   for (const term of Object.values(onDemandTerms)) {
@@ -56,54 +65,64 @@ function pickHourlyUsd(onDemandTerms) {
   return null;
 }
 
-// ---------- Modern Azure series allow-list ----------
+/* =====================================
+   AZURE — modern series classifier (parser-based)
+===================================== */
 /**
- * Keep only common/current series (no legacy v1/v2).
- * General  : Dv5/6/7, Dsv5/6/7, Dasv5/6/7, Dadsv5/6/7, Dpsv5/6, Bsv2/Basv2, Bpsv2 (Linux-only)
- * Compute  : Fsv2, Famsv6/7, Fadsv7, Fasv7
- * Memory   : Ev5/Esv5, Edv5, Ebsv5
- *
- * Refs:
- *  - Azure VM series overview & families (modern series)  (pricing/series page)  [turn5search26]
- *  - F family (compute-optimized), Fsv2                    [turn5search27][turn5search24]
- *  - E family (memory-optimized), Ev5/Esv5/Edv5/Ebsv5      [turn5search30][turn5search31][turn5search33]
- *  - Dv2 is previous generation (exclude)                  [turn5search35]
+ * Retail API armSkuName examples:
+ *   Standard_D4s_v5, Standard_D8ads_v5, Standard_E16as_v5, Standard_F8s_v2,
+ *   Standard_B2ps_v2, Standard_D2ps_v5, Standard_E16ps_v5 …
  */
-const AZ_SERIES_ALLOW = {
-  general: [
-    /^standard_d(v5|v6|v7)/i,
-    /^standard_ds(v5|v6|v7)/i,
-    /^standard_das(v5|v6|v7)/i,
-    /^standard_dads(v5|v6|v7)/i,
-    /^standard_dps(v5|v6)/i,
-    /^standard_b(sv2|asv2)/i,
-    /^standard_bpsv2/i, // ARM -> Linux-only
-  ],
-  compute: [
-    /^standard_fsv2/i,
-    /^standard_fa(ms|mds)?v6/i,
-    /^standard_fa(ms|mds)?v7/i,
-    /^standard_fasv7/i,
-    /^standard_fadsv7/i,
-  ],
-  memory: [
-    /^standard_e(v5|sv5)/i,
-    /^standard_edv5/i,
-    /^standard_ebsv5/i,
-  ],
-};
 
-function azureCategoryFromSkuName(armSkuName, productName) {
-  const name = String(armSkuName || productName || '').toLowerCase();
-  for (const [cat, patterns] of Object.entries(AZ_SERIES_ALLOW)) {
-    if (patterns.some(rx => rx.test(name))) return cat;
-  }
-  return null; // not a modern/common series we track
+// Get 'standard_<stuff>' family token (lowercased)
+function parseAzureFamilyToken(name) {
+  const m = String(name || '').toLowerCase().match(/^standard_([a-z0-9]+)\b/);
+  return m ? m[1] : '';
 }
 
-// ARM indicator: “p” denotes ARM-based processor in Azure size naming (e.g., Bpsv2)  [6](https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types)
+// Extract version number from `_v#`
+function parseAzureVersion(name) {
+  const m = String(name || '').toLowerCase().match(/_v(\d+)\b/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Return category: 'general' | 'compute' | 'memory' | null (filtered out)
+ * Modern-only rules based on family letter + version:
+ *   D (v5/6/7)  -> general (includes Das/Dads/Dd/Dps subfamilies)
+ *   B (v2 only) -> general (Bsv2/Basv2/Bpsv2)
+ *   F (v2 or v6/7) -> compute (Fsv2 and newer F* v6/v7 families)
+ *   E (v5) -> memory (Ev5/Esv5/Edv5/Ebsv5)
+ */
+function azureCategoryFromSkuName(armSkuName, productName) {
+  const name = String(armSkuName || productName || '').toLowerCase();
+  if (!name.startsWith('standard_')) return null;
+
+  const token = parseAzureFamilyToken(name);  // e.g., 'd4ads', 'e16as', 'f8s', 'b2ps'
+  if (!token) return null;
+
+  const version = parseAzureVersion(name);    // 2, 5, 6, 7
+  const familyLetter = token[0];              // 'd','e','f','b', etc.
+
+  switch (familyLetter) {
+    case 'd':
+      return (version && version >= 5) ? 'general' : null;
+    case 'b':
+      return /_v2\b/.test(name) ? 'general' : null;
+    case 'f':
+      return (version === 2 || (version && version >= 6)) ? 'compute' : null;
+    case 'e':
+      return (version === 5) ? 'memory' : null;
+    default:
+      return null;
+  }
+}
+
+// ARM indicator: 'p' immediately after the family letter => Arm-based processor
+// e.g., Standard_B2ps_v2, Standard_D4ps_v5, Standard_E16ps_v5
 function isArmSku(instance) {
-  return /standard_.*p/i.test(String(instance || ''));
+  const s = String(instance || '').toLowerCase();
+  return /^standard_[deb]p/.test(s);
 }
 
 // ---------- Normalize OS ----------
@@ -122,6 +141,7 @@ async function fetchAwsCompute(region) {
   if (!resp.ok) throw new Error(`AWS pricing (${region}) HTTP ${resp.status}`);
   const data = await resp.json();
   const rows = [];
+
   for (const sku in data.products) {
     const prod = data.products[sku];
     if (prod.productFamily !== "Compute Instance") continue;
@@ -129,13 +149,16 @@ async function fetchAwsCompute(region) {
     const instance = attrs.instanceType;
     if (!instance) continue;
     if (!isWantedAwsFamily(instance)) continue;
+
     const linux = isAwsLinux(attrs);
     const win   = isAwsWindows(attrs);
     if (!linux && !win) continue;
+
     const vcpu = Number(attrs.vcpu || 0);
     const ram  = Number(String(attrs.memory || "0 GB").split(" ")[0]);
     const price = pickHourlyUsd(data.terms?.OnDemand?.[sku]);
     if (!price) continue;
+
     rows.push({
       instance,
       vcpu,
@@ -149,32 +172,37 @@ async function fetchAwsCompute(region) {
 }
 
 /* =====================================
-   AZURE RETAIL (PAYG) — Ubuntu & Windows
+   AZURE RETAIL (PAYG) — Linux & Windows
 ===================================== */
 /**
- * We query Retail Prices API twice (Ubuntu + Windows), then keep only modern
+ * Query Retail Prices API twice (Linux + Windows), keep only modern
  * series by category; enrich with vCPU/RAM via ARM /vmSizes later.
  *
- * Retail Prices API docs: Azure Retail Prices
- * We use `type eq 'Consumption'` to ensure PAYG.
+ * Docs note: filter values are case-sensitive in 2023-01-01-preview.
+ * Use contains(productName, 'Linux'|'Windows'), not 'Ubuntu'.  (Linux base rows)
  */
+
 async function fetchAzureRetailByOs(region, os /* 'Linux' | 'Windows' */) {
   const api = "https://prices.azure.com/api/retail/prices";
-  const osNeedle = os === 'Linux' ? "Ubuntu" : "Windows"; // forces OS-specific price rows
+  const osNeedle = os === 'Linux' ? "Linux" : "Windows";
   const filter = `serviceName eq 'Virtual Machines' and armRegionName eq '${region}'
                   and type eq 'Consumption' and contains(productName, '${osNeedle}')`;
   let next = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}`;
   const out = [];
+
   while (next) {
     const resp = await fetch(next);
     if (!resp.ok) throw new Error(`Azure retail ${os} HTTP ${resp.status}`);
     const page = await resp.json();
+
     for (const x of page.Items || []) {
       const instance = x.armSkuName || x.skuName || '';
       const price = x.unitPrice ?? x.retailPrice ?? null;
       if (!price || !instance) continue;
+
       const category = azureCategoryFromSkuName(instance, x.productName);
-      if (!category) continue; // skip legacy series
+      if (!category) continue; // skip non-modern series
+
       out.push({
         instance,
         pricePerHourUSD: price,
@@ -191,15 +219,18 @@ async function fetchAzureRetailByOs(region, os /* 'Linux' | 'Windows' */) {
 }
 
 async function fetchAzureComputeRetailSimplified(region) {
-  // OS-strict two-pass (Ubuntu + Windows), only modern series per AZ_SERIES_ALLOW
+  console.log(`Azure Retail fetch for region ${region} (Linux & Windows) ...`);
   const linuxRows = await fetchAzureRetailByOs(region, 'Linux');
   const winRows   = await fetchAzureRetailByOs(region, 'Windows');
+
+  console.log(`• Retail items pre-filter → Linux: ${linuxRows.length}, Windows: ${winRows.length}`);
+
   const all = [...linuxRows, ...winRows];
 
-  // Linux-only guard for ARM families (e.g., Bpsv2 Arm64) — block Windows rows  [7](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/compute-optimized/f-family)
+  // Linux-only guard for ARM families (e.g., Bpsv2 / Dpsv5 / Epsv5)
   const filtered = all.filter(r => !(isArmSku(r.instance) && r.os === 'Windows'));
 
-  // De-dupe per (instance|region|os): keep the lowest hourly price
+  // De-dupe per (instance|region|os) keeping the lowest hourly price
   const key = r => `${r.instance.toLowerCase()}|${r.region.toLowerCase()}|${r.os}`;
   const map = new Map();
   for (const r of filtered) {
@@ -207,15 +238,18 @@ async function fetchAzureComputeRetailSimplified(region) {
     const cur = map.get(k);
     if (!cur || r.pricePerHourUSD < cur.pricePerHourUSD) map.set(k, r);
   }
-  return Array.from(map.values());
+  const finalRows = Array.from(map.values());
+  console.log(`• Retail items after modern+ARM filters: ${finalRows.length}`);
+
+  return finalRows;
 }
 
 /* =====================================
    AZURE VM SIZE SPECS (ARM) → vCPU / RAM
 ===================================== */
-// Region sizes endpoint — authoritative for cores/RAM per size in region  [8](https://github.com/MicrosoftDocs/azure-compute-docs/blob/main/articles/virtual-machines/sizes/general-purpose/includes/bpsv2-series-summary.md)
+// Region sizes endpoint — authoritative for cores/RAM per size in region
 async function fetchAzureVmSizes(region) {
-  const url = `https://management.azure.com/subscriptions/${process.env.AZURE_SUBSCRIPTION_ID}/providers/Microsoft.Compute/locations/${region}/vmSizes?api-version=2022-03-01`;
+  const url = `https://management.azure.com/subscriptions/${AZ_SUB_ID}/providers/Microsoft.Compute/locations/${region}/vmSizes?api-version=2022-03-01`;
   const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${ARM_TOKEN}` }
   });
@@ -241,25 +275,34 @@ async function fetchAzureVmSizes(region) {
 ===================================== */
 async function fetchAzureManagedDisks(region) {
   const api = "https://prices.azure.com/api/retail/prices";
-  const filter = `serviceName eq 'Storage' and armRegionName eq '${region}' and productName eq 'Managed Disks' and type eq 'Consumption'`;
+  const filter = `serviceName eq 'Storage' and armRegionName eq '${region}'
+                  and contains(productName, 'Managed Disks') and type eq 'Consumption'`;
   let next = `${api}?api-version=2023-01-01-preview&$filter=${encodeURIComponent(filter)}`;
+
   const ssd = {};
   const hdd = {};
+
+  // Bands (GiB) for Premium SSD v2 (E*) and Standard HDD (S*)
   const SSD_MAP = { E1:4, E2:8, E3:16, E4:32, E6:64, E10:128, E15:256, E20:512, E30:1024, E40:2048, E50:4096 };
   const HDD_MAP = { S4:32, S6:64, S10:128, S15:256, S20:512, S30:1024, S40:2048, S50:4096 };
+
   while (next) {
     const resp = await fetch(next);
     if (!resp.ok) throw new Error(`Azure disk HTTP ${resp.status}`);
     const page = await resp.json();
+
     for (const it of page.Items || []) {
       const uom = String(it.unitOfMeasure || "").toLowerCase();
       if (!uom.includes("month")) continue;
+
       const sku = (it.armSkuName || it.skuName || "").toUpperCase();
       const price = it.unitPrice ?? it.retailPrice ?? null;
       if (!price) continue;
+
       const m = sku.match(/\b([ES]\d+)\b/);
       if (!m) continue;
       const code = m[1];
+
       if (SSD_MAP[code]) ssd[SSD_MAP[code]] = price;
       if (HDD_MAP[code]) hdd[HDD_MAP[code]] = price;
     }
@@ -286,7 +329,7 @@ function getAwsEbs(region) {
     console.log("Fetching AWS compute...");
     const aws = await fetchAwsCompute(AWS_REGION);
 
-    console.log("Fetching Azure retail compute (Ubuntu + Windows; modern series)...");
+    console.log("Fetching Azure retail compute (Linux + Windows; modern series)...");
     const azRetail = await fetchAzureComputeRetailSimplified(AZURE_REGION);
 
     console.log("Fetching Azure VM size specs...");
@@ -307,12 +350,14 @@ function getAwsEbs(region) {
 
     const output = {
       meta: {
-        os: ["Linux", "Windows"],               // UI can bind to this
-        vcpu: [1, 2, 4, 8, 16, 32],             // defaults (UI can override)
+        os: ["Linux", "Windows"],
+        vcpu: [1, 2, 4, 8, 16, 32],
         ram:  [1, 2, 4, 8, 16, 32, 64]
       },
       aws,
-      azure: azRetail,                          // OS-strict, modern-only, deduped, with category
+      // OS-strict, modern-only (D v5/6/7; B v2; F v2/6/7; E v5),
+      // enriched with vCPU/RAM (region availability), ARM Linux-only enforced.
+      azure: azRetail,
       storage: {
         aws:   { region: AWS_REGION, ...awsEbs },
         azure: azDisks
