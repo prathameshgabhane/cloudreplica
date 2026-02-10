@@ -23,7 +23,7 @@ jobs:
 
       # 1) Fetch AWS → data/aws/aws.prices.json
       - name: Fetch AWS prices
-        run: node providers/aws.fetch.js
+        run: node scripts/providers/aws.fetch.js
         env:
           AWS_REGION: "us-east-1"
 
