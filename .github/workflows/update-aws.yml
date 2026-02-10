@@ -1,12 +1,13 @@
 name: Update AWS Prices
+
 permissions:
   contents: write
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
-  schedule:
-    - cron: "15 */6 * * *"
+  # Intentionally no 'schedule' here to avoid duplicate runs;
+  # the orchestrator (update-all.yml) owns the schedule.
 
 jobs:
   update-aws:
@@ -15,29 +16,37 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '20'
 
+      # 1) Fetch AWS → data/aws/aws.prices.json
       - name: Fetch AWS prices
-        run: node scripts/providers/aws.fetch.js
+        run: node providers/aws.fetch.js
         env:
           AWS_REGION: "us-east-1"
 
+      # 2) Aggregate (reads renamed provider files, writes data/prices.json)
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
-      - name: Debug git status
+      # 3) Publish to docs/ for GitHub Pages
+      - name: Publish data into docs for GitHub Pages
         run: |
-          git status --porcelain
-          echo "---"
-          git diff --name-only -- data || true
+          mkdir -p docs/data/aws docs/data/azure
+          cp -f data/prices.json                 docs/data/prices.json
+          cp -f data/aws/aws.prices.json         docs/data/aws/aws.prices.json || true
+          # keep Azure file if it exists so the site always has both when available
+          if [ -f data/azure/azure.prices.json ]; then
+            cp -f data/azure/azure.prices.json   docs/data/azure/azure.prices.json
+          fi
 
+      # 4) Commit only when there are actual changes
       - name: Skip commit if no changes
         id: delta
         run: |
-          if git diff --quiet --exit-code -- data; then
+          if git diff --quiet --exit-code -- data docs/data; then
             echo "skip=true" >> $GITHUB_OUTPUT
           fi
 
@@ -47,5 +56,8 @@ jobs:
         with:
           commit_message: "Auto-update AWS prices"
           file_pattern: |
-            data/aws/prices.json
+            data/aws/aws.prices.json
             data/prices.json
+            docs/data/prices.json
+            docs/data/aws/aws.prices.json
+            docs/data/azure/azure.prices.json
