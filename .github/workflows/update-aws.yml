@@ -1,0 +1,45 @@
+name: Update AWS Prices
+permissions:
+  contents: write
+
+on:
+  workflow_call: {}       # <— allows other workflows to call this
+  workflow_dispatch: {}
+  schedule:
+    - cron: "15 */6 * * *"
+
+jobs:
+  update-aws:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Fetch AWS prices
+        run: node scripts/providers/aws.fetch.js
+        env:
+          AWS_REGION: "us-east-1"
+
+      - name: Aggregate providers
+        run: node scripts/aggregate/build-prices.js
+
+      - name: Skip commit if no changes
+        id: delta
+        run: |
+          if git diff --quiet --exit-code -- data; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit changes
+        if: steps.delta.outputs.skip != 'true'
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Auto-update AWS prices"
+          file_pattern: |
+            data/aws/prices.json
+            data/prices.json
