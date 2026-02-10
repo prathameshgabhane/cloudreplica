@@ -39,7 +39,7 @@ jobs:
 
       # 4) Fetch Azure → data/azure/azure.prices.json
       - name: Fetch Azure prices
-        run: node providers/azure.fetch.js
+        run: node scripts/providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
           AZURE_REGION: "eastus"
