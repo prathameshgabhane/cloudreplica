@@ -1,13 +1,13 @@
 name: Update Azure Prices
+
 permissions:
   contents: write
   id-token: write  # REQUIRED for Azure OIDC
 
 on:
-  workflow_call: {}       # <— allows other workflows to call this
+  workflow_call: {}       # allows other workflows to call this
   workflow_dispatch: {}   # manual trigger
-  schedule:
-    - cron: "0 */6 * * *"
+  # Intentionally no schedule here; the orchestrator (update-all.yml) owns the schedule.
 
 jobs:
   update-azure:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1. Azure OIDC Login
+      # 1) Azure OIDC Login
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -24,45 +24,58 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 2. Mint ARM token
+      # 2) Mint ARM token
       - name: Generate ARM Token
         run: |
           echo "Fetching ARM token..."
           ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
           echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
 
-      # 3. Node 18
-      - name: Set up Node
+      # 3) Node 20 (LTS)
+      - name: Set up Node (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '20'
 
-      # 4. Fetch Azure → data/azure/prices.json
+      # 4) Fetch Azure → data/azure/azure.prices.json
       - name: Fetch Azure prices
-        run: node scripts/providers/azure.fetch.js
+        run: node providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
           AZURE_REGION: "eastus"
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 5. Aggregate → data/prices.json
+      # 5) Aggregate → data/prices.json
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
-      # 6. Skip commit if no changes
+      # 6) Publish to docs/ for GitHub Pages (atomic set publishing)
+      - name: Publish data into docs for GitHub Pages
+        run: |
+          mkdir -p docs/data/aws docs/data/azure
+          cp -f data/prices.json                 docs/data/prices.json
+          cp -f data/azure/azure.prices.json     docs/data/azure/azure.prices.json || true
+          # keep AWS file if it already exists so the site shows both when available
+          if [ -f data/aws/aws.prices.json ]; then
+            cp -f data/aws/aws.prices.json       docs/data/aws/aws.prices.json
+          fi
+
+      # 7) Commit only when there are actual changes
       - name: Skip commit if no changes
         id: delta
         run: |
-          if git diff --quiet --exit-code -- data; then
+          if git diff --quiet --exit-code -- data docs/data; then
             echo "skip=true" >> $GITHUB_OUTPUT
           fi
 
-      # 7. Commit (azure + aggregated)
       - name: Commit changes
         if: steps.delta.outputs.skip != 'true'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Auto-update Azure prices"
           file_pattern: |
-            data/azure/prices.json
+            data/azure/azure.prices.json
             data/prices.json
+            docs/data/prices.json
+            docs/data/azure/azure.prices.json
+            docs/data/aws/aws.prices.json
