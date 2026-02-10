@@ -1,5 +1,9 @@
-// script.js (tiny coordinator - ES module)
-import { fmt, monthly, sumSafe, fillSelect, setSelectValue, safeSetText, appendToText, setStatus, resetCards, nearestCeil, sizeToAzureSku } from "./ui/utils.js";
+// docs/script.js (tiny coordinator - ES module)
+import {
+  fmt, monthly, sumSafe, fillSelect, setSelectValue, safeSetText,
+  appendToText, setStatus, resetCards, nearestCeil, sizeToAzureSku,
+  HRS_PER_MONTH
+} from "./ui/utils.js";
 import { API_BASE, FALLBACK_META, STORAGE_CFG, loadPricesAndMeta } from "./ui/state.js";
 import { initStorageTypeTooltip, initOsTypeTooltip } from "./ui/tooltips.js";
 import { findBestAws, findBestAzure } from "./ui/matchers.js";
@@ -166,6 +170,9 @@ export async function compare(resetFamilies = false) {
     if (btn) btn.disabled = false;
   }
 }
+
+// Expose compare() for the inline onclick handler in index.html
+window.compare = compare;
 
 // Bootstrap
 document.addEventListener("DOMContentLoaded", async () => {
