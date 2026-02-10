@@ -15,7 +15,7 @@ function safeJSON(str, fallback = {}) {
 }
 
 function uniqSortedNums(arr) {
-  return [...new Set(arr.filter(Number.isFinite))].sort((a,b)=>a-b);
+  return [...new Set(arr.filter(Number.isFinite))].sort((a, b) => a - b);
 }
 
 function dedupeCheapestByKey(list, keyFn) {
