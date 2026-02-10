@@ -5,7 +5,7 @@ const { atomicWrite, dedupeCheapestByKey, warnAndSkipWriteOnEmpty, logStart, log
 const { isWantedEc2Family } = require("../lib/aws");
 
 const REGION = process.env.AWS_REGION || "us-east-1";
-const OUT = path.join("data", "aws", "prices.json");
+const OUT = path.join("data", "aws", "aws.prices.json");
 
 async function fetchAwsIndex() {
   logStart(`[AWS] EC2 PAYG ${REGION}`);
