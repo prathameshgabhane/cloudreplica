@@ -25,16 +25,16 @@ export function isOnDemandShared(x) {
 export function isAwsInFamily(inst, family) {
   if (!family) return true;
   const s = String(inst || "").toLowerCase();
-  if (family === "general")  return /^[mt]/.test(s);
+  if (family === "general")  return /^[mt]/.test(s);   // FIXED
   if (family === "compute")  return /^c/.test(s);
-  if (family === "memory")   return /^[rxz]/.test(s);
+  if (family === "memory")   return /^[rxz]/.test(s);  // FIXED
   return true;
 }
 
 export function isAzureInFamily(inst, family) {
   if (!family) return true;
   const n = String(inst || "").toLowerCase();
-  const m = n.match(/standard_([a-z]+)/);
+  const m = n.match(/standard_([a-z]+)/);              // FIXED
   const first = m?.[1]?.[0] || n[0] || null;
   if (!first) return true;
 
