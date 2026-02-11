@@ -18,11 +18,12 @@ const OUT = path.join("data", "gcp", "gcp.prices.json");
 const REGION = process.env.GCP_REGION || "us-east1";
 
 /**
- * GCP Price List API (public)
- * Contains all retail PAYG prices, including Compute Engine.
+ * GCP Price List API (PUBLIC MIRROR THAT STILL WORKS)
+ * Google removed the old appspot endpoint.
+ * This GCS-hosted mirror is the correct one to use.
  */
 const GCP_PRICING_URL =
-  "https://cloudpricingcalculator.appspot.com/static/data/pricelist.json";
+  "https://storage.googleapis.com/cloudpricingcalculator.appspot.com/static/data/pricelist.json";
 
 /**
  * Allowed VM families for our tool:
@@ -42,7 +43,11 @@ function classifyGcpInstance(instance) {
     return "compute";
 
   // General Purpose
-  const generalFamilies = ["C3", "C3D", "C4", "C4D", "C4A", "N1", "N2", "N2D", "N4", "N4A", "N4D", "T2A", "T2D", "E2"];
+  const generalFamilies = [
+    "C3","C3D","C4","C4D","C4A",
+    "N1","N2","N2D","N4","N4A","N4D",
+    "T2A","T2D","E2"
+  ];
   if (generalFamilies.some(f => name.startsWith(f))) return "general";
 
   return null;
@@ -64,7 +69,6 @@ async function main() {
   const json = await fetchGcpPrices();
 
   const rows = [];
-
   const skus = json.gcp_price_list || {};
 
   // Traverse all SKU entries
@@ -79,7 +83,7 @@ async function main() {
     const category = classifyGcpInstance(instance);
     if (!category) continue;
 
-    // OS Determination
+    // OS detection
     const os = item.os && item.os.toLowerCase().includes("win")
       ? "Windows"
       : "Linux"; // Linux free PAYG
@@ -88,7 +92,7 @@ async function main() {
     if (!Number.isFinite(price) || price <= 0) continue;
 
     const vcpu = Number(item.vcpu);
-    const ram = Number(item.memory_gb);
+    const ram  = Number(item.memory_gb);
     if (!vcpu || !ram) continue; // ensure no null values
 
     rows.push({
@@ -116,14 +120,14 @@ async function main() {
   const meta = {
     os: ["Linux", "Windows"],
     vcpu: uniqSortedNums(cheapest.map(x => x.vcpu)),
-    ram: uniqSortedNums(cheapest.map(x => x.ram))
+    ram:  uniqSortedNums(cheapest.map(x => x.ram))
   };
 
   // Storage mapping (constant)
   const storage = {
     region: REGION,
-    ssd_per_gb_month: 0.17,     // PD-SSD approx PAYG
-    hdd_per_gb_month: 0.04      // PD-Standard approx PAYG
+    ssd_per_gb_month: 0.17,   // PD‑SSD
+    hdd_per_gb_month: 0.04    // PD‑Standard
   };
 
   const out = { meta, compute: cheapest, storage };
