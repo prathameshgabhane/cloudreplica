@@ -11,6 +11,7 @@ jobs:
   update-aws:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -20,27 +21,26 @@ jobs:
         with:
           node-version: '20'
 
+      # 1) Fetch BOTH providers (CRITICAL FIX)
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
           AWS_REGION: "us-east-1"
 
-      # ⬇⬇⬇ ADD THESE TWO STEPS HERE ⬇⬇⬇
-      - name: Ensure workflow is running from repo root
+      - name: Fetch Azure prices
+        run: node scripts/providers/azure.fetch.js
+        env:
+          AZURE_REGION: "eastus"
+
+      # 2) Ensure root (path fix)
+      - name: Ensure workflow is in repo root
         run: cd "$GITHUB_WORKSPACE"
 
-      - name: Debug working directory
-        run: |
-          echo "PWD = $PWD"
-          ls -al .
-      # ⬆⬆⬆ END OF FIX ⬆⬆⬆
-
+      # 3) Aggregate
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
-      - name: Debug aggregated counts
-        run: node -e "const j=require('./data/prices.json'); console.log({aws:(j.aws||[]).length, azure:(j.azure||[]).length, meta:!!j.meta});"
-
+      # 4) Publish to GitHub Pages
       - name: Publish data into docs for GitHub Pages
         run: |
           mkdir -p docs/data/aws docs/data/azure
@@ -50,6 +50,7 @@ jobs:
             cp -f data/azure/azure.prices.json   docs/data/azure/azure.prices.json
           fi
 
+      # 5) Commit logic
       - name: Skip commit if no changes
         id: delta
         run: |
@@ -64,6 +65,7 @@ jobs:
           commit_message: "Auto-update AWS prices"
           file_pattern: |
             data/aws/aws.prices.json
+            data/azure/azure.prices.json
             data/prices.json
             docs/data/prices.json
             docs/data/aws/aws.prices.json
