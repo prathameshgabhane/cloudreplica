@@ -7,18 +7,68 @@ permissions:
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 */6 * * *"
+    - cron: "30 */6 * * *"   # Every 6 hours at minute 30 UTC
 
 concurrency:
   group: update-all-cloud-prices
   cancel-in-progress: false
 
 jobs:
+
+  # 1) Fetch Azure PAYG data
   azure:
     uses: ./.github/workflows/update-azure.yml
     secrets: inherit
 
+  # 2) Fetch AWS PAYG data (runs after Azure)
   aws:
     needs: azure
     uses: ./.github/workflows/update-aws.yml
     secrets: inherit
+
+  # 3) Fetch GCP PAYG data (runs after AWS)
+  gcp:
+    needs: aws
+    uses: ./.github/workflows/update-gcp.yml
+    secrets: inherit
+
+  # 4) Aggregate, publish, commit
+  aggregate:
+    needs: gcp
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Build final merged data/prices.json
+      - name: Aggregate cloud provider files
+        run: node scripts/aggregate/build-prices.js
+
+      # Publish to docs/data/ for GitHub Pages
+      - name: Publish data to docs/
+        run: |
+          mkdir -p docs/data/aws docs/data/azure docs/data/gcp
+          cp -f data/prices.json             docs/data/prices.json
+          cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
+          cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
+          cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
+
+      # FINAL commit (only one!)
+      - name: Commit final merged cloud prices
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Auto-update ALL cloud prices"
+          file_pattern: |
+            data/aws/aws.prices.json
+            data/azure/azure.prices.json
+            data/gcp/gcp.prices.json
+            data/prices.json
+            docs/data/prices.json
+            docs/data/aws/aws.prices.json
+            docs/data/azure/azure.prices.json
+            docs/data/gcp/gcp.prices.json
