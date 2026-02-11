@@ -7,23 +7,18 @@ permissions:
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 */6 * * *"  # every 6 hours at minute 30 (UTC)
+    - cron: "30 */6 * * *"
 
-# Ensure only one orchestrator run at a time (avoids overlapping commits)
 concurrency:
   group: update-all-cloud-prices
   cancel-in-progress: false
 
 jobs:
-  # Run Azure first (it will fetch Azure, then run aggregator, then publish/copy)
   azure:
     uses: ./.github/workflows/update-azure.yml
     secrets: inherit
-    # timeout-minutes is NOT allowed here; keep it in the leaf file
 
-  # Then run AWS; it will refresh AWS, re-run aggregator, then publish/copy
   aws:
     needs: azure
     uses: ./.github/workflows/update-aws.yml
     secrets: inherit
-    # timeout-minutes is NOT allowed here; keep it in the leaf file
