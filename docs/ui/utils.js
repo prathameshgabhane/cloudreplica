@@ -1,6 +1,7 @@
 // docs/ui/utils.js
 export const HRS_PER_MONTH = 730;
 
+/* ---------- Formatting & math helpers ---------- */
 export function fmt(n) {
   return (n == null || isNaN(n)) ? "—" : `$${Number(n).toFixed(4)}`;
 }
@@ -14,6 +15,7 @@ export function sumSafe(a, b) {
   return na + nb;
 }
 
+/* ---------- DOM helpers ---------- */
 export function fillSelect(id, items) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -40,7 +42,7 @@ export function appendToText(id, extra) {
   if (el) el.textContent = (el.textContent || "") + extra;
 }
 
-export function setStatus(msg, level="info") {
+export function setStatus(msg, level = "info") {
   const el = document.getElementById("status");
   if (!el) return;
   const err  = "var(--err,#b91c1c)";
@@ -51,13 +53,14 @@ export function setStatus(msg, level="info") {
                    (level === "warn")  ? warn : mut;
 }
 
+/* ---------- Numeric helpers ---------- */
 export function nearestCeil(requested, allowed) {
-  const sorted = [...allowed].sort((a,b)=>a-b);
+  const sorted = [...allowed].sort((a, b) => a - b);
   for (const s of sorted) if (requested <= s) return s;
   return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
-// Azure disk label helpers (unchanged logic)
+/* ---------- Azure disk label helpers ---------- */
 export function sizeToAzureSku(type, size) {
   if (!isFinite(size)) return null;
   if (type === "ssd") {
@@ -69,7 +72,55 @@ export function sizeToAzureSku(type, size) {
   }
 }
 
-// Reset all UI fields
+/* ---------- Storage price resolvers ---------- */
+/**
+ * AWS: simple per-GB × amount table (gp3 for SSD, st1 for HDD).
+ * Returns the *monthly* USD charge (number) or null if not computable.
+ */
+export function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
+  if (!isFinite(gb) || gb <= 0) return null;
+  const t = (type || "hdd").toLowerCase();
+  if (t === "ssd") {
+    return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
+  }
+  // HDD (st1) default
+  return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
+}
+
+/**
+ * Azure: pick nearest allowed disk size from monthly tables.
+ * - SSD table is looked up via nearestCeil (E-series).
+ * - HDD table is looked up via nearestCeil (S-series) with a hard minimum of 32 GB.
+ * Returns: { sku, size, monthlyUSD, adjusted }
+ *   - size: billable disk size (may differ from requested gb)
+ *   - adjusted: true if billed size != requested gb
+ */
+export function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
+  const t = (type || "hdd").toLowerCase();
+  if (!isFinite(gb) || gb <= 0) return { sku: null, size: null, monthlyUSD: null, adjusted: false };
+
+  const ssdTbl = azCfg?.ssd_monthly || {};
+  const hddTbl = azCfg?.hdd_monthly || {};
+
+  if (t === "ssd") {
+    const size = nearestCeil(gb, Object.keys(ssdTbl).map(Number));
+    const monthlyUSD = size != null ? (ssdTbl[size] ?? null) : null;
+    const sku = sizeToAzureSku("ssd", size);
+    return { sku, size, monthlyUSD, adjusted: (size != null && size !== gb) };
+  }
+
+  // HDD branch — enforce 32 GB minimum billable size
+  const allowed = Object.keys(hddTbl).map(Number);
+  let size = nearestCeil(gb, allowed);
+  if (size == null && allowed.length) size = allowed.sort((a, b) => a - b)[0];
+  if (size != null && size < 32) size = 32;
+
+  const monthlyUSD = size != null ? (hddTbl[size] ?? null) : null;
+  const sku = sizeToAzureSku("hdd", size);
+  return { sku, size, monthlyUSD, adjusted: (size != null && size !== gb) };
+}
+
+/* ---------- Reset all UI fields ---------- */
 export function resetCards() {
   document.getElementById("awsInstance").innerHTML = `<strong>Recommended Instance:</strong> …`;
   document.getElementById("azInstance").innerHTML  = `<strong>Recommended VM Size:</strong> …`;
