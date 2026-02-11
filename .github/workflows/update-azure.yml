@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: '20'
 
-      # 4) Fetch BOTH providers (CRITICAL FIX)
+      # 4) Fetch BOTH providers
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
@@ -50,7 +50,7 @@ jobs:
           AZURE_REGION: "eastus"
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 5) Aggregate
+      # 5) Aggregate providers
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
@@ -59,28 +59,12 @@ jobs:
         run: |
           mkdir -p docs/data/aws docs/data/azure
           cp -f data/prices.json                 docs/data/prices.json
-          cp -f data/azure/azure.prices.json     docs/data/azure/azure.prices.json || true
-          if [ -f data/aws/aws.prices.json ]; then
-            cp -f data/aws/aws.prices.json       docs/data/aws/aws.prices.json
-          fi
+          cp -f data/azure/azure.prices.json     docs/data/azure/azure.prices.json
+          cp -f data/aws/aws.prices.json         docs/data/aws/aws.prices.json
 
-      # 7) Commit logic
-      - name: Skip commit if no changes
-        id: delta
-        run: |
-          if git diff --quiet --exit-code -- data docs/data; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-          fi
-
+      # 7) Commit changes (ALWAYS commit — critical fix)
       - name: Commit changes
-        if: steps.delta.outputs.skip != 'true'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Auto-update Azure prices"
-          file_pattern: |
-            data/azure/azure.prices.json
-            data/aws/aws.prices.json
-            data/prices.json
-            docs/data/prices.json
-            docs/data/azure/azure.prices.json
-            docs/data/aws/aws.prices.json
+          file_pattern: .
