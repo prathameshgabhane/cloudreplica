@@ -32,6 +32,10 @@ jobs:
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
+      # (Optional) show counts to verify aggregation picked up rows
+      - name: Debug aggregated counts
+        run: node -e "const j=require('./data/prices.json'); console.log({aws:(j.aws||[]).length, azure:(j.azure||[]).length, meta:!!j.meta});"
+
       # 3) Publish to docs/ for GitHub Pages
       - name: Publish data into docs for GitHub Pages
         run: |
