@@ -25,13 +25,13 @@ function aggregate() {
   const seen = { aws: false, azure: false, gcp: false, oci: false };
 
   for (const p of providers) {
-    // Use new file names for AWS/Azure; keep generic default for others
+    // Correct locations for provider outputs
     const f =
       p === "aws"
         ? path.join(root, "aws", "aws.prices.json")
         : p === "azure"
         ? path.join(root, "azure", "azure.prices.json")
-        : path.join(root, p, "prices.json");
+        : path.join(root, p, "prices.json"); // for gcp/oci if added later
 
     const j = readIfExists(f);
     if (!j) {
@@ -41,44 +41,62 @@ function aggregate() {
 
     seen[p] = true;
 
-    // ---- meta union ----
+    // ---- META MERGE ----
     const srcMeta = j.meta || {};
-    agg.meta.os = Array.from(new Set([...(agg.meta.os || []), ...(srcMeta.os || [])]));
-    agg.meta.vcpu = uniqSortedNums([...(agg.meta.vcpu || []), ...(srcMeta.vcpu || [])]);
-    agg.meta.ram = uniqSortedNums([...(agg.meta.ram || []), ...(srcMeta.ram || [])]);
 
-    // ---- compute list per provider ----
+    agg.meta.os = Array.from(
+      new Set([...(agg.meta.os || []), ...(srcMeta.os || [])])
+    );
+
+    agg.meta.vcpu = uniqSortedNums([
+      ...(agg.meta.vcpu || []),
+      ...(srcMeta.vcpu || [])
+    ]);
+
+    agg.meta.ram = uniqSortedNums([
+      ...(agg.meta.ram || []),
+      ...(srcMeta.ram || [])
+    ]);
+
+    // ---- COMPUTE MERGE ----
     const compute = Array.isArray(j.compute) ? j.compute : [];
     console.log(`✅ ${p.toUpperCase()} rows: ${compute.length}`);
+
     agg[p] = compute;
 
-    // ---- storage (per provider) ----
-    if (j.storage) agg.storage[p] = j.storage;
+    // ---- STORAGE MERGE ----
+    if (j.storage) {
+      agg.storage[p] = j.storage;
+    }
   }
 
-  // If no providers present, keep meta minimal to avoid UI crash
+  // If literally zero provider files found → fail
+  if (!seen.aws && !seen.azure && !seen.gcp && !seen.oci) {
+    throw new Error(
+      "❌ No provider inputs found.\nExpected at least one of:\n" +
+        " - data/aws/aws.prices.json\n" +
+        " - data/azure/azure.prices.json\n" +
+        " - data/gcp/prices.json\n" +
+        " - data/oci/prices.json"
+    );
+  }
+
+  // If compute lists missing but meta exists → prevent UI crash
   if (!agg.aws && !agg.azure && !agg.gcp && !agg.oci) {
     agg.meta.os = agg.meta.os.length ? agg.meta.os : ["Linux", "Windows"];
   }
 
-  // Also: if we didn't see ANY provider files, let the workflow fail loudly
-  if (!seen.aws && !seen.azure && !seen.gcp && !seen.oci) {
-    throw new Error(
-      "No provider inputs found. Expected at least one of:\n" +
-      " - data/aws/aws.prices.json\n" +
-      " - data/azure/azure.prices.json\n" +
-      " - data/gcp/prices.json\n" +
-      " - data/oci/prices.json"
-    );
-  }
+  // Timestamp for debugging & forcing GH Pages refresh when needed
+  agg.generatedAt = new Date().toISOString();
 
   return agg;
 }
 
 function main() {
-  const out = aggregate();
+  const output = aggregate();
   const OUT = path.join("data", "prices.json");
-  atomicWrite(OUT, out);
+
+  atomicWrite(OUT, output);
   console.log(`🟢 Aggregated → ${OUT}`);
 }
 
