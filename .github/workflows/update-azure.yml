@@ -1,15 +1,15 @@
-name: Update Azure Prices
+name: Fetch Azure Prices
 
 permissions:
-  contents: write
   id-token: write
+  contents: write
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
 
 jobs:
-  update-azure:
+  fetch-azure:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1) Azure OIDC Login
+      # Azure authentication
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -25,46 +25,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 2) Mint ARM token
       - name: Generate ARM Token
         run: |
           ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
           echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
 
-      # 3) Set up Node
-      - name: Set up Node (LTS)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      # 4) Fetch BOTH providers
-      - name: Fetch AWS prices
-        run: node scripts/providers/aws.fetch.js
-        env:
-          AWS_REGION: "us-east-1"
-
+      # Fetch Azure pricing only
       - name: Fetch Azure prices
         run: node scripts/providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
           AZURE_REGION: "eastus"
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # 5) Aggregate providers
-      - name: Aggregate providers
-        run: node scripts/aggregate/build-prices.js
-
-      # 6) Publish to GitHub Pages
-      - name: Publish data into docs for GitHub Pages
-        run: |
-          mkdir -p docs/data/aws docs/data/azure
-          cp -f data/prices.json                 docs/data/prices.json
-          cp -f data/azure/azure.prices.json     docs/data/azure/azure.prices.json
-          cp -f data/aws/aws.prices.json         docs/data/aws/aws.prices.json
-
-      # 7) Commit changes (ALWAYS commit — critical fix)
-      - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "Auto-update Azure prices"
-          file_pattern: .
