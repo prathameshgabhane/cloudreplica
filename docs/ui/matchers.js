@@ -25,16 +25,16 @@ export function isOnDemandShared(x) {
 export function isAwsInFamily(inst, family) {
   if (!family) return true;
   const s = String(inst || "").toLowerCase();
-  if (family === "general")  return /^[mt]/.test(s);   // FIXED
+  if (family === "general")  return /^[mt]/.test(s);
   if (family === "compute")  return /^c/.test(s);
-  if (family === "memory")   return /^[rxz]/.test(s);  // FIXED
+  if (family === "memory")   return /^[rxz]/.test(s);
   return true;
 }
 
 export function isAzureInFamily(inst, family) {
   if (!family) return true;
   const n = String(inst || "").toLowerCase();
-  const m = n.match(/standard_([a-z]+)/);              // FIXED
+  const m = n.match(/standard_([a-z]+)/);
   const first = m?.[1]?.[0] || n[0] || null;
   if (!first) return true;
 
@@ -70,7 +70,7 @@ export function inferAzureCoresRamFromName(name) {
   const n = name.toLowerCase();
 
   let coreMatch = n.match(/standard_[a-z]+(\d+)[a-z]*/i);
-  if (!coreMatch) coreMatch = n.match(/[a-z]+(\d+)-/i);  // e.g., F16-4ams_v7 -> 16
+  if (!coreMatch) coreMatch = n.match(/[a-z]+(\d+)-/i);  // e.g., F16-4ams_v7 → 16
   const vcpu = coreMatch ? Number(coreMatch[1]) : null;
 
   let familyRamPerCore = null;
@@ -84,7 +84,73 @@ export function inferAzureCoresRamFromName(name) {
   return { vcpu, ram };
 }
 
-// ---------- Finders ----------
+//
+// ---------------- GCP FAMILY MATCHING (NEW) ----------------
+//
+
+// Fallback: infer category from instance prefix (only if backend category missing)
+export function isGcpInFamily(inst, family) {
+  if (!family) return true;
+  if (!inst) return true;
+
+  const name = String(inst).toUpperCase();
+
+  // Memory optimized
+  if (family === "memory") {
+    return (
+      name.startsWith("M1") ||
+      name.startsWith("M2") ||
+      name.startsWith("M3") ||
+      name.startsWith("M4")
+    );
+  }
+
+  // Compute optimized
+  if (family === "compute") {
+    return (
+      name.startsWith("C2")  ||
+      name.startsWith("C2D") ||
+      name.startsWith("H3")  ||
+      name.startsWith("H4D")
+    );
+  }
+
+  // General purpose
+  if (family === "general") {
+    return (
+      name.startsWith("C3")  || name.startsWith("C3D") ||
+      name.startsWith("C4")  || name.startsWith("C4A") || name.startsWith("C4D") ||
+      name.startsWith("E2")  ||
+      name.startsWith("N1")  || name.startsWith("N2")   || name.startsWith("N2D") ||
+      name.startsWith("N4")  || name.startsWith("N4A")  || name.startsWith("N4D") ||
+      name.startsWith("T2A") || name.startsWith("T2D")
+    );
+  }
+
+  return true;
+}
+
+// Preferred: use backend-provided category (same pattern as Azure)
+export function gcpFamilyMatch(row, family) {
+  if (!family) return true;
+
+  const fam = String(family).toLowerCase();
+  const cat = String(row?.category || "").toLowerCase();
+
+  if (cat) {
+    if (fam === "general") return cat === "general";
+    if (fam === "compute") return cat === "compute";
+    if (fam === "memory")  return cat === "memory";
+    return true;
+  }
+
+  // Fallback if no backend category
+  return isGcpInFamily(row?.instance, family);
+}
+
+//
+// ---------------- AWS FINDER ----------------
+//
 export function findBestAws(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error("AWS price list is empty");
@@ -115,6 +181,9 @@ export function findBestAws(list, vcpu, ram, os, family) {
   return best;
 }
 
+//
+// ---------------- AZURE FINDER ----------------
+//
 export function findBestAzure(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error("Azure price list is empty");
@@ -128,7 +197,7 @@ export function findBestAzure(list, vcpu, ram, os, family) {
     (normalizeOs(x.os) === wantOS || x.os === "Unknown")
   );
 
-  // 2) if empty AND a family was selected, retry WITHOUT family (still honoring OS)
+  // 2) fallback: remove family filter
   if (pre.length === 0 && family) {
     pre = list.filter(x =>
       isOnDemandShared(x) &&
@@ -136,7 +205,7 @@ export function findBestAzure(list, vcpu, ram, os, family) {
     );
   }
 
-  // 3) final fallback: ignore OS completely (rare)
+  // 3) fallback: ignore OS
   if (pre.length === 0) {
     pre = list.filter(x => isOnDemandShared(x) && azureFamilyMatch(x, family));
   }
@@ -146,7 +215,7 @@ export function findBestAzure(list, vcpu, ram, os, family) {
     throw new Error(`No Azure entries for OS=${os || "any"}${fLabel}`);
   }
 
-  // Prefer entries with known specs; fallback to inference
+  // Prefer complete specs; fallback to inferred
   const enriched = pre.map(x => {
     if (isFinite(x.vcpu) && isFinite(x.ram)) return x;
     const meta = inferAzureCoresRamFromName(x.instance);
@@ -158,15 +227,15 @@ export function findBestAzure(list, vcpu, ram, os, family) {
     const hasSpecs = isFinite(x.vcpu) && isFinite(x.ram);
     let score = hasSpecs
       ? distance(x.vcpu, vcpu) + distance(x.ram, ram)
-      : 9999; // penalize unknown specs
+      : 9999;
 
-    if (x.os === "Unknown") score += 0.5; // prefer exact-OS rows
+    if (x.os === "Unknown") score += 0.5;
     const tieBreaker = x.pricePerHourUSD ?? Infinity;
 
     if (score < bestScore || (score === bestScore && tieBreaker < (best?.pricePerHourUSD ?? Infinity))) {
       best = x; bestScore = score;
     }
   }
-  if (best) best.os = os; // reflect user choice
+  if (best) best.os = os;
   return best;
 }
