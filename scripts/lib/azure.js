@@ -63,7 +63,7 @@ function widenAzureSeries(instance) {
   const n = String(instance).toLowerCase();
   const body = n.startsWith("standard_") ? n.slice(9) : n;
   const lead = (body[0] || "").toUpperCase();
-  return ["A", "B", "D", "E", "F", "L", "M", "N"].includes(lead);
+  return ["A","B","D","E","F","L","M","N"].includes(lead);
 }
 
 module.exports = {
