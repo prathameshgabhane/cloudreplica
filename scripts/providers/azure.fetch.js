@@ -20,6 +20,38 @@ const {
 const OUT = path.join("data", "azure", "azure.prices.json");
 const REGION = process.env.AZURE_REGION || "eastus";
 
+/* ------------------------------------------------------------------
+   🔥 Resilient fetch with retry + backoff
+   Handles Azure Retail API 429, 500, 503, network drops, bad pages.
+--------------------------------------------------------------------*/
+async function fetchWithRetry(url, retries = 6) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url);
+
+      if (res.ok) {
+        return res.json();
+      }
+
+      console.warn(
+        `[Azure] Retail HTTP ${res.status} on attempt ${i + 1}/${retries}`
+      );
+    } catch (err) {
+      console.warn(
+        `[Azure] Retail error on attempt ${i + 1}/${retries} → ${err.message}`
+      );
+    }
+
+    // Exponential backoff: 1.5s, 3s, 6s, 12s, 24s...
+    await new Promise(res => setTimeout(res, 1500 * Math.pow(2, i)));
+  }
+
+  throw new Error(`[Azure] Retail failed after ${retries} retries → ${url}`);
+}
+
+/* ------------------------------------------------------------------
+   🔥 Retail price fetcher with retry for each page
+--------------------------------------------------------------------*/
 async function fetchRetailPrices() {
   logStart(`[Azure] Retail (PAYG) ${REGION}`);
 
@@ -31,30 +63,32 @@ async function fetchRetailPrices() {
   let next = base, pages = 0, MAX = 200;
 
   while (next && pages < MAX) {
-    const r = await fetch(next);
-    if (!r.ok) throw new Error(`[Azure] Retail HTTP ${r.status}`);
-    const j = await r.json();
+    const j = await fetchWithRetry(next);   // <<-- RETRY FIX
     items.push(...(j.Items || []));
     next = j.NextPageLink || null;
     pages++;
   }
+
   logDone(`[Azure] Retail count=${items.length}`);
   return items;
 }
 
+/* ------------------------------------------------------------------
+   🔥 MAIN
+--------------------------------------------------------------------*/
 async function main() {
-  // 1) Retail prices
+  // 1) Retail prices with retry
   const retail = await fetchRetailPrices();
 
   // 2) Normalize + strict filtering to standard PAYG
   const pre = [];
   for (const it of retail) {
-    // --- Strong prefilters for standard on-demand ---
-    // (a) correct unit
-    const uom = (it.unitOfMeasure || "").toLowerCase();
-    if (uom !== "1 hour") continue;
 
-    // (b) textual exclusions: promo/devtest/spot/reservation/savings/AHB
+    // --- Unit must be hourly
+    const uom = (it.unitOfMeasure || "").toLowerCase();
+    if (!uom.includes("hour")) continue; // FIXED (Azure sometimes returns "1H", "Hour", etc.)
+
+    // --- Textual exclusions
     const blob = [
       it.productName, it.skuName, it.meterName, it.armSkuName, it.retailPriceType
     ].filter(Boolean).join(" ").toLowerCase();
@@ -66,14 +100,14 @@ async function main() {
     if (/savings\s*plan/.test(blob)) continue;
     if (/\bahb\b|hybrid\s*benefit/.test(blob)) continue;
 
-    // (c) instance name + family scope
+    // --- Instance extraction
     const skuName = it?.skuName || "";
     const armSku  = it?.armSkuName || "";
     const instance = (skuName.split(" ")[0] || armSku || "").trim();
     if (!instance) continue;
     if (!widenAzureSeries(instance)) continue;
 
-    // (d) OS extraction (and basic consistency guard)
+    // --- OS + price
     const os = detectOsFromProductName(it.productName);
     const price = Number(it.unitPrice);
     if (!Number.isFinite(price) || price <= 0) continue;
@@ -90,7 +124,7 @@ async function main() {
   console.log(`[Azure] collected=${pre.length}, cheapest=${cheapest.length}`);
   if (warnAndSkipWriteOnEmpty("Azure", cheapest)) return;
 
-  // 3) Enrich with vCPU/RAM via ResourceSkus (optional when token/subscription provided)
+  // 3) Optionally enrich with ResourceSkus
   const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
   const armToken = process.env.ARM_TOKEN;
 
@@ -102,21 +136,20 @@ async function main() {
   for (const vm of cheapest) {
     const spec = skuMap.get(String(vm.instance).toLowerCase());
     vm.vcpu = spec?.vcpu ?? null;
-    vm.ram  = spec?.ram  ?? null; // GiB
+    vm.ram  = spec?.ram  ?? null;
     vm.category = categorizeByInstanceName(vm.instance);
   }
 
-  // 4) Build meta & storage
+  // 4) Meta + storage
   const meta = {
     os: ["Linux", "Windows"],
     vcpu: uniqSortedNums(cheapest.map(x => x.vcpu)),
     ram:  uniqSortedNums(cheapest.map(x => x.ram))
   };
 
-  // Keep minimal storage defaults here; UI now merges over defaults safely
   const storage = {
     region: REGION,
-    ssd_monthly: { 128: 9.6, 256: 19.2 },  // minimal placeholders; UI will merge defaults for other sizes
+    ssd_monthly: { 128: 9.6, 256: 19.2 },
     hdd_monthly: { 128: 5.888, 256: 11.328 }
   };
 
