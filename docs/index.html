@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Cloud Price Compare (AWS vs Azure)</title>
+  <title>Cloud Price Compare (AWS vs Azure vs GCP)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- stylesheet -->
@@ -89,12 +89,13 @@
           <option value="ssd">SSD</option>
         </select>
 
+        <!-- ⭐ UPDATED TOOLTIP CONTENT (GCP INCLUDED) -->
         <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
             <strong>Storage comparison</strong><br />
-            • SSD → AWS gp3, Azure Standard SSD<br />
-            • HDD → AWS st1, Azure Standard HDD
+            • SSD → AWS gp3, Azure Standard SSD, GCP PD‑SSD<br />
+            • HDD → AWS st1, Azure Standard HDD, GCP PD‑Standard
           </div>
         </div>
       </div>
@@ -201,7 +202,7 @@
 
   </div>
 
-<!-- IMPORTANT: load the coordinator as an ES module -->
+  <!-- IMPORTANT: load the coordinator as an ES module -->
   <script type="module" src="./script.js"></script>
 
 </body>
