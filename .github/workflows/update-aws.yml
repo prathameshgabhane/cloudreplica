@@ -6,13 +6,11 @@ permissions:
 on:
   workflow_call: {}
   workflow_dispatch: {}
-  # Intentionally no 'schedule' here to avoid duplicate runs;
-  # the orchestrator (update-all.yml) owns the schedule.
 
 jobs:
   update-aws:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # recommended
+    timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -22,32 +20,36 @@ jobs:
         with:
           node-version: '20'
 
-      # 1) Fetch AWS → data/aws/aws.prices.json
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
           AWS_REGION: "us-east-1"
 
-      # 2) Aggregate (reads renamed provider files, writes data/prices.json)
+      # ⬇⬇⬇ ADD THESE TWO STEPS HERE ⬇⬇⬇
+      - name: Ensure workflow is running from repo root
+        run: cd "$GITHUB_WORKSPACE"
+
+      - name: Debug working directory
+        run: |
+          echo "PWD = $PWD"
+          ls -al .
+      # ⬆⬆⬆ END OF FIX ⬆⬆⬆
+
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
-      # (Optional) show counts to verify aggregation picked up rows
       - name: Debug aggregated counts
         run: node -e "const j=require('./data/prices.json'); console.log({aws:(j.aws||[]).length, azure:(j.azure||[]).length, meta:!!j.meta});"
 
-      # 3) Publish to docs/ for GitHub Pages
       - name: Publish data into docs for GitHub Pages
         run: |
           mkdir -p docs/data/aws docs/data/azure
           cp -f data/prices.json             docs/data/prices.json
           cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json || true
-          # keep Azure file if it exists so the site always has both when available
           if [ -f data/azure/azure.prices.json ]; then
             cp -f data/azure/azure.prices.json   docs/data/azure/azure.prices.json
           fi
 
-      # 4) Commit only when there are actual changes
       - name: Skip commit if no changes
         id: delta
         run: |
