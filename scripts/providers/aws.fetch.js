@@ -65,7 +65,9 @@ async function main() {
     });
   }
 
+  // Keep the cheapest per (instance, region, OS)
   const cheapest = dedupeCheapestByKey(rows, r => `${r.instance}-${r.region}-${r.os}`);
+  console.log(`[AWS] collected=${rows.length}, cheapest=${cheapest.length}`);
   if (warnAndSkipWriteOnEmpty("AWS", cheapest)) return;
 
   const meta = {
