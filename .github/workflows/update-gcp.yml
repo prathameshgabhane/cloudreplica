@@ -1,0 +1,60 @@
+name: Update GCP Prices
+
+permissions:
+  contents: write
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  update-gcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ⭐ Fetch GCP prices
+      - name: Fetch GCP prices
+        run: node scripts/providers/gcp.fetch.js
+        env:
+          GCP_REGION: "us-east1"
+
+      # ⭐ Aggregate all providers (aws + azure + gcp)
+      - name: Aggregate providers
+        run: node scripts/aggregate/build-prices.js
+
+      # ⭐ Publish to GitHub Pages
+      - name: Publish data into docs for GitHub Pages
+        run: |
+          mkdir -p docs/data/aws docs/data/azure docs/data/gcp
+          cp -f data/prices.json             docs/data/prices.json
+          cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
+          if [ -f data/aws/aws.prices.json ]; then
+            cp -f data/aws/aws.prices.json   docs/data/aws/aws.prices.json
+          fi
+          if [ -f data/azure/azure.prices.json ]; then
+            cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
+          fi
+
+      # ⭐ Always commit changes
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Auto-update GCP prices"
+          file_pattern: |
+            data/gcp/gcp.prices.json
+            data/aws/aws.prices.json
+            data/azure/azure.prices.json
+            data/prices.json
+            docs/data/prices.json
+            docs/data/gcp/gcp.prices.json
+            docs/data/aws/aws.prices.json
+            docs/data/azure/azure.prices.json
