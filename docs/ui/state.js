@@ -10,16 +10,30 @@ export const FALLBACK_META = {
 
 // In-memory storage pricing defaults (overridden/merged by prices.json when present)
 export let STORAGE_CFG = {
-  aws:  { region: "us-east-1", ssd_per_gb_month: 0.08, hdd_st1_per_gb_month: 0.045 },
-  azure:{ region: "eastus",
-          ssd_monthly: {4:0.3,8:0.6,16:1.2,32:2.4,64:4.8,128:9.6,256:19.2,512:38.4},
-          hdd_monthly: {32:1.536,64:3.008,128:5.888,256:11.328} }
+  aws:  { 
+    region: "us-east-1", 
+    ssd_per_gb_month: 0.08, 
+    hdd_st1_per_gb_month: 0.045 
+  },
+
+  azure:{ 
+    region: "eastus",
+    ssd_monthly: {4:0.3,8:0.6,16:1.2,32:2.4,64:4.8,128:9.6,256:19.2,512:38.4},
+    hdd_monthly: {32:1.536,64:3.008,128:5.888,256:11.328}
+  },
+
+  // ⭐ NEW: Default GCP storage config
+  gcp: {
+    region: "us-east1",
+    ssd_per_gb_month: 0.17,   // PD-SSD typical retail
+    hdd_per_gb_month: 0.04    // PD-Standard typical retail
+  }
 };
 
 /**
  * Loads the aggregated prices.json from docs/data/prices.json,
  * merges storage tables over defaults (do not replace entirely),
- * and returns the parsed data (meta + aws[] + azure[] + storage).
+ * and returns the parsed data (meta + aws[] + azure[] + gcp[] + storage).
  */
 export async function loadPricesAndMeta() {
   const r = await fetch(API_BASE, { mode: "cors" });
@@ -29,6 +43,7 @@ export async function loadPricesAndMeta() {
   // ---- Merge storage config safely (do not wipe defaults) ----
   const incomingAws   = data?.storage?.aws   || {};
   const incomingAzure = data?.storage?.azure || {};
+  const incomingGcp   = data?.storage?.gcp   || {};   // ⭐ NEW
 
   STORAGE_CFG = {
     aws: {
@@ -45,10 +60,21 @@ export async function loadPricesAndMeta() {
       // MERGE tables so missing sizes fall back to defaults
       ssd_monthly: { ...(STORAGE_CFG.azure.ssd_monthly || {}), ...(incomingAzure.ssd_monthly || {}) },
       hdd_monthly: { ...(STORAGE_CFG.azure.hdd_monthly || {}), ...(incomingAzure.hdd_monthly || {}) },
+    },
+
+    // ⭐ NEW: GCP merge logic (simple values, not size-tables)
+    gcp: {
+      region: incomingGcp.region ?? STORAGE_CFG.gcp.region,
+      ssd_per_gb_month: Number(
+        incomingGcp.ssd_per_gb_month ?? STORAGE_CFG.gcp.ssd_per_gb_month
+      ),
+      hdd_per_gb_month: Number(
+        incomingGcp.hdd_per_gb_month ?? STORAGE_CFG.gcp.hdd_per_gb_month
+      )
     }
   };
 
-  // ---- Defensive meta fallback (keeps dropdowns usable if meta is sparse) ----
+  // ---- Defensive meta fallback ----
   const meta = data.meta || {};
   data.meta = {
     os:   Array.isArray(meta.os)   && meta.os.length   ? meta.os   : FALLBACK_META.os.map(x => x.value),
