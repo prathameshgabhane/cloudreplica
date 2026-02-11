@@ -2,12 +2,12 @@
 const fs = require("fs");
 const path = require("path");
 
-// FIXED PATHS – these folders exist because the fetchers write here
-const AWS_FILE = path.join(__dirname, "..", "data", "aws", "aws.prices.json");
-const AZURE_FILE = path.join(__dirname, "..", "data", "azure", "azure.prices.json");
+// FIXED CORRECT PATHS – two levels up from scripts/aggregate/
+const AWS_FILE = path.join(__dirname, "..", "..", "data", "aws", "aws.prices.json");
+const AZURE_FILE = path.join(__dirname, "..", "..", "data", "azure", "azure.prices.json");
 
 // Output file
-const OUTPUT_FILE = path.join(__dirname, "..", "data", "prices.json");
+const OUTPUT_FILE = path.join(__dirname, "..", "..", "data", "prices.json");
 
 // Load JSON safely
 function loadJSON(f) {
