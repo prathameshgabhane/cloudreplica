@@ -7,7 +7,8 @@ function readIfExists(file) {
   if (!fs.existsSync(file)) return null;
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
+  } catch (e) {
+    console.warn(`⚠️ Failed to parse JSON: ${file} -> ${e.message}`);
     return null;
   }
 }
@@ -21,6 +22,8 @@ function aggregate() {
     storage: {}
   };
 
+  const seen = { aws: false, azure: false, gcp: false, oci: false };
+
   for (const p of providers) {
     // Use new file names for AWS/Azure; keep generic default for others
     const f =
@@ -31,16 +34,23 @@ function aggregate() {
         : path.join(root, p, "prices.json");
 
     const j = readIfExists(f);
-    if (!j) continue;
+    if (!j) {
+      console.log(`ℹ️ ${p.toUpperCase()} file not found or empty: ${f}`);
+      continue;
+    }
+
+    seen[p] = true;
 
     // ---- meta union ----
     const srcMeta = j.meta || {};
     agg.meta.os = Array.from(new Set([...(agg.meta.os || []), ...(srcMeta.os || [])]));
-    agg.meta.vcpu = uniqSortedNums([...(agg.meta.vcpu || []), ...((srcMeta.vcpu || []))]);
-    agg.meta.ram = uniqSortedNums([...(agg.meta.ram || []), ...((srcMeta.ram || []))]);
+    agg.meta.vcpu = uniqSortedNums([...(agg.meta.vcpu || []), ...(srcMeta.vcpu || [])]);
+    agg.meta.ram = uniqSortedNums([...(agg.meta.ram || []), ...(srcMeta.ram || [])]);
 
     // ---- compute list per provider ----
-    agg[p] = Array.isArray(j.compute) ? j.compute : [];
+    const compute = Array.isArray(j.compute) ? j.compute : [];
+    console.log(`✅ ${p.toUpperCase()} rows: ${compute.length}`);
+    agg[p] = compute;
 
     // ---- storage (per provider) ----
     if (j.storage) agg.storage[p] = j.storage;
@@ -51,6 +61,17 @@ function aggregate() {
     agg.meta.os = agg.meta.os.length ? agg.meta.os : ["Linux", "Windows"];
   }
 
+  // Also: if we didn't see ANY provider files, let the workflow fail loudly
+  if (!seen.aws && !seen.azure && !seen.gcp && !seen.oci) {
+    throw new Error(
+      "No provider inputs found. Expected at least one of:\n" +
+      " - data/aws/aws.prices.json\n" +
+      " - data/azure/azure.prices.json\n" +
+      " - data/gcp/prices.json\n" +
+      " - data/oci/prices.json"
+    );
+  }
+
   return agg;
 }
 
@@ -58,7 +79,7 @@ function main() {
   const out = aggregate();
   const OUT = path.join("data", "prices.json");
   atomicWrite(OUT, out);
-  console.log(`✅ Aggregated → ${OUT}`);
+  console.log(`🟢 Aggregated → ${OUT}`);
 }
 
 main();
