@@ -2,17 +2,17 @@ name: Update Azure Prices
 
 permissions:
   contents: write
-  id-token: write  # REQUIRED for Azure OIDC
+  id-token: write
 
 on:
-  workflow_call: {}       # allows other workflows to call this
-  workflow_dispatch: {}   # manual trigger
-  # Intentionally no schedule here; the orchestrator (update-all.yml) owns the schedule.
+  workflow_call: {}
+  workflow_dispatch: {}
 
 jobs:
   update-azure:
     runs-on: ubuntu-latest
-    timeout-minutes: 30   # recommended: stop a stuck run
+    timeout-minutes: 30
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -28,17 +28,21 @@ jobs:
       # 2) Mint ARM token
       - name: Generate ARM Token
         run: |
-          echo "Fetching ARM token..."
           ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
           echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
 
-      # 3) Node 20 (LTS)
+      # 3) Set up Node
       - name: Set up Node (LTS)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 4) Fetch Azure → data/azure/azure.prices.json
+      # 4) Fetch BOTH providers (CRITICAL FIX)
+      - name: Fetch AWS prices
+        run: node scripts/providers/aws.fetch.js
+        env:
+          AWS_REGION: "us-east-1"
+
       - name: Fetch Azure prices
         run: node scripts/providers/azure.fetch.js
         env:
@@ -46,26 +50,21 @@ jobs:
           AZURE_REGION: "eastus"
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 5) Aggregate → data/prices.json
+      # 5) Aggregate
       - name: Aggregate providers
         run: node scripts/aggregate/build-prices.js
 
-      # (Optional) show counts to verify aggregation picked up rows
-      - name: Debug aggregated counts
-        run: node -e "const j=require('./data/prices.json'); console.log({aws:(j.aws||[]).length, azure:(j.azure||[]).length, meta:!!j.meta});"
-
-      # 6) Publish to docs/ for GitHub Pages (atomic set publishing)
+      # 6) Publish to GitHub Pages
       - name: Publish data into docs for GitHub Pages
         run: |
           mkdir -p docs/data/aws docs/data/azure
           cp -f data/prices.json                 docs/data/prices.json
           cp -f data/azure/azure.prices.json     docs/data/azure/azure.prices.json || true
-          # keep AWS file if it already exists so the site shows both when available
           if [ -f data/aws/aws.prices.json ]; then
             cp -f data/aws/aws.prices.json       docs/data/aws/aws.prices.json
           fi
 
-      # 7) Commit only when there are actual changes
+      # 7) Commit logic
       - name: Skip commit if no changes
         id: delta
         run: |
@@ -80,6 +79,7 @@ jobs:
           commit_message: "Auto-update Azure prices"
           file_pattern: |
             data/azure/azure.prices.json
+            data/aws/aws.prices.json
             data/prices.json
             docs/data/prices.json
             docs/data/azure/azure.prices.json
