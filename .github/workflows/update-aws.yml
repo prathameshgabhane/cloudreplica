@@ -12,7 +12,7 @@ on:
 jobs:
   update-aws:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # (optional but recommended)
+    timeout-minutes: 30  # recommended
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -36,8 +36,8 @@ jobs:
       - name: Publish data into docs for GitHub Pages
         run: |
           mkdir -p docs/data/aws docs/data/azure
-          cp -f data/prices.json                 docs/data/prices.json
-          cp -f data/aws/aws.prices.json         docs/data/aws/aws.prices.json || true
+          cp -f data/prices.json             docs/data/prices.json
+          cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json || true
           # keep Azure file if it exists so the site always has both when available
           if [ -f data/azure/azure.prices.json ]; then
             cp -f data/azure/azure.prices.json   docs/data/azure/azure.prices.json
