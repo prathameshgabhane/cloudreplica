@@ -4,14 +4,15 @@
   <meta charset="utf-8" />
   <title>Cloud Price Compare (AWS vs Azure vs GCP)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- stylesheet -->
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
   <h2>Live Cloud Price Compare</h2>
 
+  <!--------------------------------------------------
+      FILTERS SECTION
+  --------------------------------------------------->
   <div class="filters">
     <div class="row">
 
@@ -89,7 +90,7 @@
           <option value="ssd">SSD</option>
         </select>
 
-        <!-- ⭐ UPDATED TOOLTIP CONTENT (GCP INCLUDED) -->
+        <!-- Updated Tooltip Content -->
         <div class="info-pop" id="storageInfoTip" role="tooltip" aria-hidden="true">
           <div class="info-pop__arrow"></div>
           <div class="info-pop__content">
@@ -110,9 +111,14 @@
     <div id="status" class="status">Ready</div>
   </div>
 
+  <!--------------------------------------------------
+      RESULTS SECTION (AWS + Azure + GCP)
+  --------------------------------------------------->
   <div class="results">
 
-    <!-- AWS Panel -->
+    <!-- ===========================
+         AWS PANEL
+    ============================ -->
     <div class="panel">
       <h3>AWS EC2</h3>
 
@@ -156,7 +162,9 @@
       </div>
     </div>
 
-    <!-- Azure Panel -->
+    <!-- ===========================
+         AZURE PANEL
+    ============================ -->
     <div class="panel">
       <h3>Azure VM</h3>
 
@@ -197,6 +205,52 @@
       <div class="split total">
         <span class="label">≈ Total Monthly:</span>
         <span id="azTotalMonthly">–</span>
+      </div>
+    </div>
+
+    <!-- ===========================
+         GCP PANEL (NEW)
+    ============================ -->
+    <div class="panel">
+      <h3>GCP Compute Engine</h3>
+
+      <div class="family-filter" id="gcpFamilyWrap" style="display:none;">
+        <label for="gcpFamily">Family</label>
+        <select id="gcpFamily" aria-label="GCP family">
+          <option value="">Auto (Recommended)</option>
+          <option value="general">General</option>
+          <option value="compute">Compute</option>
+          <option value="memory">Memory</option>
+        </select>
+      </div>
+
+      <p id="gcpInstance"><strong>Recommended Machine:</strong> –</p>
+      <p id="gcpCpu">vCPU: –</p>
+      <p id="gcpRam">RAM: –</p>
+
+      <p class="muted" id="gcpStorageSel">Storage: –</p>
+
+      <p id="gcpPrice">Price/hr: –</p>
+      <p id="gcpMonthly">≈ Monthly: –</p>
+
+      <div class="split">
+        <span class="label">Storage Price/hr:</span>
+        <span id="gcpStoragePriceHr">–</span>
+      </div>
+      <div class="split">
+        <span class="label">≈ Storage Monthly:</span>
+        <span id="gcpStorageMonthly">–</span>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="split total">
+        <span class="label">Total Price/hr:</span>
+        <span id="gcpTotalHr">–</span>
+      </div>
+      <div class="split total">
+        <span class="label">≈ Total Monthly:</span>
+        <span id="gcpTotalMonthly">–</span>
       </div>
     </div>
 
