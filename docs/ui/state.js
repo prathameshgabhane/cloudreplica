@@ -1,5 +1,5 @@
 // docs/ui/state.js
-export const API_BASE = "../data/prices.json";
+export const API_BASE = "./data/prices.json";
 
 // Defaults for dropdown meta
 export const FALLBACK_META = {
