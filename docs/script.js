@@ -1,62 +1,98 @@
-// docs/script.js (tiny coordinator - ES module)
+// docs/script.js (3‑provider coordinator - AWS, Azure, GCP)
 import {
   fmt, monthly, sumSafe, fillSelect, setSelectValue, safeSetText,
   appendToText, setStatus, resetCards, nearestCeil, sizeToAzureSku,
-  HRS_PER_MONTH
+  HRS_PER_MONTH, getGcpStorageMonthlyFromCfg
 } from "./ui/utils.js";
+
 import { API_BASE, FALLBACK_META, STORAGE_CFG, loadPricesAndMeta } from "./ui/state.js";
 import { initStorageTypeTooltip, initOsTypeTooltip } from "./ui/tooltips.js";
-import { findBestAws, findBestAzure } from "./ui/matchers.js";
+import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
 
+/* ============================================================
+   3-PROVIDER FAMILY FILTERS (AWS, Azure, GCP)
+   (GCP panel will be added later)
+   ============================================================ */
 function showFamilyFilters() {
   const awsW = document.getElementById("awsFamilyWrap");
   const azW  = document.getElementById("azFamilyWrap");
+  const gcpW = document.getElementById("gcpFamilyWrap");
   if (awsW) awsW.style.display = "flex";
   if (azW)  azW.style.display  = "flex";
+  if (gcpW) gcpW.style.display = "flex";
 }
 function resetFamilyFilters() {
   const awsW = document.getElementById("awsFamilyWrap");
   const azW  = document.getElementById("azFamilyWrap");
+  const gcpW = document.getElementById("gcpFamilyWrap");
   if (awsW) awsW.style.display = "none";
   if (azW)  azW.style.display  = "none";
+  if (gcpW) gcpW.style.display = "none";
 }
 
-// Storage resolvers (unchanged logic, but short)
-function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
-  if (!isFinite(gb) || gb <= 0) return null;
-  const t = (type || "hdd").toLowerCase();
-  if (t === "ssd") return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
-  return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
+/* ============================================================
+   STORAGE HELPERS
+   ============================================================ */
+function getAwsStorageMonthly(type, gb) {
+  return getAwsStorageMonthlyFromCfg(type, gb, STORAGE_CFG.aws);
 }
-function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
-  const t = (type || "hdd").toLowerCase();
-  if (!isFinite(gb) || gb <= 0) return { sku: null, size: null, monthlyUSD: null };
-  const ssdTbl = azCfg?.ssd_monthly || {};
-  const hddTbl = azCfg?.hdd_monthly || {};
-  if (t === "ssd") {
-    const size = nearestCeil(gb, Object.keys(ssdTbl).map(Number));
-    const monthlyUSD = size != null ? (ssdTbl[size] ?? null) : null;
-    const sku = sizeToAzureSku("ssd", size);
-    return { sku, size, monthlyUSD };
-  } else {
-    const size = nearestCeil(gb, Object.keys(hddTbl).map(Number));
-    const monthlyUSD = size != null ? (hddTbl[size] ?? null) : null;
-    const sku = sizeToAzureSku("hdd", size);
-    return { sku, size, monthlyUSD };
+
+function getAzureStorage(type, gb) {
+  return getAzureStorageSkuAndMonthlyFromCfg(type, gb, STORAGE_CFG.azure);
+}
+
+function getGcpStorageMonthly(type, gb) {
+  return getGcpStorageMonthlyFromCfg(type, gb, STORAGE_CFG.gcp);
+}
+
+/* ============================================================
+   findBestGcp() — implemented similar to AWS/Azure logic
+   ============================================================ */
+function findBestGcp(list, vcpu, ram, os, family) {
+  if (!Array.isArray(list) || list.length === 0)
+    throw new Error("GCP price list is empty");
+
+  const wantOs = String(os || "").toLowerCase();
+
+  let filtered = list.filter(x =>
+    x &&
+    isFinite(x.vcpu) &&
+    isFinite(x.ram) &&
+    isFinite(x.pricePerHourUSD) &&
+    (!wantOs || x.os.toLowerCase() === wantOs) &&
+    gcpFamilyMatch(x, family)
+  );
+
+  if (filtered.length === 0) {
+    const fLabel = family ? ` family=${family}` : "";
+    throw new Error(`No GCP entries for OS=${os || "any"}${fLabel}`);
   }
+
+  let best = null, bestScore = Infinity;
+  for (const x of filtered) {
+    const score = Math.abs(x.vcpu - vcpu) + Math.abs(x.ram - ram);
+    const tieBreaker = x.pricePerHourUSD;
+    if (score < bestScore || (score === bestScore && tieBreaker < (best?.pricePerHourUSD ?? Infinity))) {
+      best = x;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
-// Main compare flow (very short now)
+/* ============================================================
+   MAIN compare() — AWS + Azure + GCP
+   ============================================================ */
 export async function compare(resetFamilies = false) {
   const btn = document.getElementById("compareBtn");
   if (btn) btn.disabled = true;
   setStatus("Fetching local prices…");
 
   if (resetFamilies) {
-    const awsSel = document.getElementById("awsFamily");
-    const azSel  = document.getElementById("azFamily");
-    if (awsSel) awsSel.value = "";
-    if (azSel)  azSel.value = "";
+    ["awsFamily", "azFamily", "gcpFamily"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
   }
 
   const os           = document.getElementById("os")?.value || "Linux";
@@ -66,12 +102,13 @@ export async function compare(resetFamilies = false) {
   const storageAmtGB = Number(document.getElementById("storageAmt")?.value ?? 0);
   const familyAws    = document.getElementById("awsFamily")?.value || "";
   const familyAz     = document.getElementById("azFamily")?.value  || "";
+  const familyGcp    = document.getElementById("gcpFamily")?.value || "";
 
   try {
     resetCards();
     const data = await loadPricesAndMeta();
 
-    // ---- AWS match
+    /* ---------- AWS ---------- */
     let awsCard;
     try {
       const a = findBestAws(data.aws || [], vcpu, ram, os, familyAws);
@@ -83,7 +120,7 @@ export async function compare(resetFamilies = false) {
       awsCard = { error: e.message || String(e) };
     }
 
-    // ---- Azure match (with family fallback + category-aware match inside)
+    /* ---------- Azure ---------- */
     let azCard;
     try {
       const z = findBestAzure(data.azure || [], vcpu, ram, os, familyAz);
@@ -95,18 +132,44 @@ export async function compare(resetFamilies = false) {
       azCard = { error: e.message || String(e) };
     }
 
+    /* ---------- GCP ---------- */
+    let gcpCard;
+    try {
+      const g = findBestGcp(data.gcp || [], vcpu, ram, os, familyGcp);
+      gcpCard = g ? {
+        instance: g.instance, vcpu: g.vcpu, ram: g.ram,
+        pricePerHourUSD: g.pricePerHourUSD, region: g.region
+      } : null;
+    } catch (e) {
+      gcpCard = { error: e.message || String(e) };
+    }
+
+    /* ============================================================
+       STORAGE DISPLAY
+       ============================================================ */
     const selLabel = `${storageAmtGB} GB ${storageType.toUpperCase()}`;
     safeSetText("awsStorageSel", `Storage: ${selLabel}`);
     safeSetText("azStorageSel",  `Storage: ${selLabel}`);
+    safeSetText("gcpStorageSel", `Storage: ${selLabel}`);
 
-    const awsStorageMonthly = getAwsStorageMonthlyFromCfg(storageType, storageAmtGB, STORAGE_CFG.aws);
-    const awsStorageHr      = (awsStorageMonthly != null) ? awsStorageMonthly / HRS_PER_MONTH : null;
+    /* AWS Storage */
+    const awsStorageMonthly = getAwsStorageMonthly(storageType, storageAmtGB);
+    const awsStorageHr      = awsStorageMonthly != null ? awsStorageMonthly / HRS_PER_MONTH : null;
 
+    /* Azure Storage */
     const { sku: azDiskSku, size: azDiskGB, monthlyUSD: azStorageMonthly } =
-      getAzureStorageSkuAndMonthlyFromCfg(storageType, storageAmtGB, STORAGE_CFG.azure);
-    const azStorageHr = (azStorageMonthly != null) ? azStorageMonthly / HRS_PER_MONTH : null;
+      getAzureStorage(storageType, storageAmtGB);
+    const azStorageHr = azStorageMonthly != null ? azStorageMonthly / HRS_PER_MONTH : null;
 
-    // Render AWS
+    /* GCP Storage */
+    const gcpStorageMonthly = getGcpStorageMonthly(storageType, storageAmtGB);
+    const gcpStorageHr      = gcpStorageMonthly != null ? gcpStorageMonthly / HRS_PER_MONTH : null;
+
+    /* ============================================================
+       RENDER PROVIDERS
+       ============================================================ */
+
+    /* ---- AWS ---- */
     if (!awsCard || awsCard.error) {
       document.getElementById("awsInstance").innerHTML =
         `<strong>Recommended Instance:</strong> Error: ${awsCard?.error ?? "No match"}`;
@@ -119,7 +182,7 @@ export async function compare(resetFamilies = false) {
       safeSetText("awsMonthly", `≈ Monthly: ${fmt(monthly(awsCard.pricePerHourUSD))}`);
     }
 
-    // Render Azure
+    /* ---- Azure ---- */
     if (!azCard || azCard.error) {
       document.getElementById("azInstance").innerHTML =
         `<strong>Recommended VM Size:</strong> Error: ${azCard?.error ?? "No match"}`;
@@ -132,11 +195,31 @@ export async function compare(resetFamilies = false) {
       safeSetText("azMonthly", `≈ Monthly: ${fmt(monthly(azCard.pricePerHourUSD))}`);
     }
 
-    // Storage rendering
+    /* ---- GCP ---- */
+    if (!gcpCard || gcpCard.error) {
+      document.getElementById("gcpInstance").innerHTML =
+        `<strong>Recommended Machine:</strong> Error: ${gcpCard?.error ?? "No match"}`;
+    } else {
+      document.getElementById("gcpInstance").innerHTML =
+        `<strong>Recommended Machine:</strong> ${gcpCard.instance} (${gcpCard.region})`;
+      safeSetText("gcpCpu",     `vCPU: ${gcpCard.vcpu}`);
+      safeSetText("gcpRam",     `RAM: ${gcpCard.ram} GB`);
+      safeSetText("gcpPrice",   `Price/hr: ${fmt(gcpCard.pricePerHourUSD)}`);
+      safeSetText("gcpMonthly", `≈ Monthly: ${fmt(monthly(gcpCard.pricePerHourUSD))}`);
+    }
+
+    /* ============================================================
+       RENDER STORAGE COSTS
+       ============================================================ */
     safeSetText("awsStoragePriceHr", fmt(awsStorageHr));
     safeSetText("awsStorageMonthly", fmt(awsStorageMonthly));
-    safeSetText("azStoragePriceHr",  fmt(azStorageHr));
-    safeSetText("azStorageMonthly",  fmt(azStorageMonthly));
+
+    safeSetText("azStoragePriceHr", fmt(azStorageHr));
+    safeSetText("azStorageMonthly", fmt(azStorageMonthly));
+
+    safeSetText("gcpStoragePriceHr", fmt(gcpStorageHr));
+    safeSetText("gcpStorageMonthly", fmt(gcpStorageMonthly));
+
     if (azDiskSku) {
       const extra = (azDiskGB && azDiskGB !== storageAmtGB)
         ? ` (billed as ${azDiskGB} GB ${storageType.toUpperCase()}, ${azDiskSku})`
@@ -144,22 +227,36 @@ export async function compare(resetFamilies = false) {
       appendToText("azStorageSel", extra);
     }
 
-    // Totals
-    const awsComputeHr     = awsCard?.pricePerHourUSD ?? null;
-    const awsComputeMonth  = monthly(awsComputeHr);
-    const awsTotalHr       = sumSafe(awsComputeHr, awsStorageHr);
-    const awsTotalMonthly  = sumSafe(awsComputeMonth, awsStorageMonthly);
+    /* ============================================================
+       TOTAL COSTS
+       ============================================================ */
+    const awsComputeHr    = awsCard?.pricePerHourUSD ?? null;
+    const awsComputeMonth = monthly(awsComputeHr);
+    const awsTotalHr      = sumSafe(awsComputeHr, awsStorageHr);
+    const awsTotalMonth   = sumSafe(awsComputeMonth, awsStorageMonthly);
 
-    const azComputeHr     = azCard?.pricePerHourUSD ?? null;
-    const azComputeMonth  = monthly(azComputeHr);
-    const azTotalHr       = sumSafe(azComputeHr, azStorageHr);
-    const azTotalMonthly  = sumSafe(azComputeMonth, azStorageMonthly);
+    const azComputeHr    = azCard?.pricePerHourUSD ?? null;
+    const azComputeMonth = monthly(azComputeHr);
+    const azTotalHr      = sumSafe(azComputeHr, azStorageHr);
+    const azTotalMonth   = sumSafe(azComputeMonth, azStorageMonthly);
+
+    const gcpComputeHr    = gcpCard?.pricePerHourUSD ?? null;
+    const gcpComputeMonth = monthly(gcpComputeHr);
+    const gcpTotalHr      = sumSafe(gcpComputeHr, gcpStorageHr);
+    const gcpTotalMonth   = sumSafe(gcpComputeMonth, gcpStorageMonthly);
 
     safeSetText("awsTotalHr",      fmt(awsTotalHr));
-    safeSetText("awsTotalMonthly", fmt(awsTotalMonthly));
-    safeSetText("azTotalHr",       fmt(azTotalHr));
-    safeSetText("azTotalMonthly",  fmt(azTotalMonthly));
+    safeSetText("awsTotalMonthly", fmt(awsTotalMonth));
 
+    safeSetText("azTotalHr",       fmt(azTotalHr));
+    safeSetText("azTotalMonthly",  fmt(azTotalMonth));
+
+    safeSetText("gcpTotalHr",      fmt(gcpTotalHr));
+    safeSetText("gcpTotalMonthly", fmt(gcpTotalMonth));
+
+    /* ============================================================
+       DONE
+       ============================================================ */
     showFamilyFilters();
     setStatus("Comparison complete ✓");
   } catch (err) {
@@ -171,51 +268,28 @@ export async function compare(resetFamilies = false) {
   }
 }
 
-// Expose compare() for the inline onclick handler in index.html
 window.compare = compare;
 
-// Bootstrap
+/* ============================================================
+   BOOTSTRAP
+   ============================================================ */
 document.addEventListener("DOMContentLoaded", async () => {
-  // Fallback meta so UI isn't blank
+
   fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
   fillSelect("cpu",  [1, 2, 4, 8, 16].map(v => ({ value: v, text: v })));
   fillSelect("ram",  [1, 2, 4, 8, 16, 32].map(v => ({ value: v, text: v })));
-  setSelectValue("os", "Linux"); setSelectValue("cpu", "2"); setSelectValue("ram", "4");
 
-  // Family change = re-compare (persist selection)
-  ["awsFamily", "azFamily"].forEach(id => {
+  setSelectValue("os", "Linux");
+  setSelectValue("cpu", "2");
+  setSelectValue("ram", "4");
+
+  ["awsFamily", "azFamily", "gcpFamily"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("change", () => compare(false));
   });
 
   initStorageTypeTooltip();
   initOsTypeTooltip();
-
-  // Try improving meta from prices.json (optional)
-  try {
-    const r = await fetch(API_BASE, { mode: "cors" });
-    const j = r.ok ? await r.json() : {};
-    const meta = j.meta;
-    if (j.storage?.aws || j.storage?.azure) {
-      // state.js loadPricesAndMeta will also re-sync on compare(); keeping early copy safe
-    }
-    if (meta) {
-      const osItems = Array.isArray(meta.os)
-        ? meta.os.map(x => (typeof x === "string" ? { value: x, text: x } : { value: x.value, text: x.value }))
-        : [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }];
-
-      fillSelect("os", osItems);
-      fillSelect("cpu", (meta.vcpu || [1, 2, 4, 8, 16]).map(v => ({ value: v, text: v })));
-      fillSelect("ram", (meta.ram  || [1, 2, 4, 8, 16, 32]).map(v => ({ value: v, text: v })));
-
-      setSelectValue("os", "Linux");
-      setSelectValue("cpu", "2");
-      setSelectValue("ram", "4");
-    }
-  } catch {}
-
-  // Also hook the Compare button from JS (works even if inline handler is removed)
-  document.getElementById("compareBtn")?.addEventListener("click", () => compare(true));
 
   compare(false);
 });
