@@ -75,7 +75,7 @@ export function sizeToAzureSku(type, size) {
 /* ---------- Storage price resolvers ---------- */
 /**
  * AWS: simple per-GB × amount table (gp3 for SSD, st1 for HDD).
- * Returns the *monthly* USD charge (number) or null if not computable.
+ * Returns monthly USD or null.
  */
 export function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
   if (!isFinite(gb) || gb <= 0) return null;
@@ -83,21 +83,16 @@ export function getAwsStorageMonthlyFromCfg(type, gb, awsCfg) {
   if (t === "ssd") {
     return gb * Number(awsCfg?.ssd_per_gb_month ?? 0.08);
   }
-  // HDD (st1) default
   return gb * Number(awsCfg?.hdd_st1_per_gb_month ?? 0.045);
 }
 
 /**
- * Azure: pick nearest allowed disk size from monthly tables.
- * - SSD table is looked up via nearestCeil (E-series).
- * - HDD table is looked up via nearestCeil (S-series) with a hard minimum of 32 GB.
- * Returns: { sku, size, monthlyUSD, adjusted }
- *   - size: billable disk size (may differ from requested gb)
- *   - adjusted: true if billed size != requested gb
+ * Azure: using monthly lookup tables.
  */
 export function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
   const t = (type || "hdd").toLowerCase();
-  if (!isFinite(gb) || gb <= 0) return { sku: null, size: null, monthlyUSD: null, adjusted: false };
+  if (!isFinite(gb) || gb <= 0)
+    return { sku: null, size: null, monthlyUSD: null, adjusted: false };
 
   const ssdTbl = azCfg?.ssd_monthly || {};
   const hddTbl = azCfg?.hdd_monthly || {};
@@ -109,7 +104,7 @@ export function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
     return { sku, size, monthlyUSD, adjusted: (size != null && size !== gb) };
   }
 
-  // HDD branch — enforce 32 GB minimum billable size
+  // HDD branch
   const allowed = Object.keys(hddTbl).map(Number);
   let size = nearestCeil(gb, allowed);
   if (size == null && allowed.length) size = allowed.sort((a, b) => a - b)[0];
@@ -118,6 +113,24 @@ export function getAzureStorageSkuAndMonthlyFromCfg(type, gb, azCfg) {
   const monthlyUSD = size != null ? (hddTbl[size] ?? null) : null;
   const sku = sizeToAzureSku("hdd", size);
   return { sku, size, monthlyUSD, adjusted: (size != null && size !== gb) };
+}
+
+/* ---------- GCP storage pricing (NEW) ---------- */
+/**
+ * GCP PD-SSD and PD-Standard:
+ * Simple per-GB rate, same as AWS model.
+ */
+export function getGcpStorageMonthlyFromCfg(type, gb, gcpCfg) {
+  if (!isFinite(gb) || gb <= 0) return null;
+
+  const t = (type || "hdd").toLowerCase();
+
+  if (t === "ssd") {
+    return gb * Number(gcpCfg?.ssd_per_gb_month ?? 0.17);  // PD-SSD
+  }
+
+  // HDD (PD-Standard)
+  return gb * Number(gcpCfg?.hdd_per_gb_month ?? 0.04);
 }
 
 /* ---------- Reset all UI fields ---------- */
