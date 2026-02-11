@@ -1,8 +1,13 @@
 // docs/script.js (3‑provider coordinator - AWS, Azure, GCP)
+
+// Import helpers from utils.js
 import {
   fmt, monthly, sumSafe, fillSelect, setSelectValue, safeSetText,
   appendToText, setStatus, resetCards, nearestCeil, sizeToAzureSku,
-  HRS_PER_MONTH, getGcpStorageMonthlyFromCfg
+  HRS_PER_MONTH,
+  getAwsStorageMonthlyFromCfg,
+  getAzureStorageSkuAndMonthlyFromCfg,
+  getGcpStorageMonthlyFromCfg
 } from "./ui/utils.js";
 
 import { API_BASE, FALLBACK_META, STORAGE_CFG, loadPricesAndMeta } from "./ui/state.js";
@@ -11,28 +16,24 @@ import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
 
 /* ============================================================
    3-PROVIDER FAMILY FILTERS (AWS, Azure, GCP)
-   (GCP panel will be added later)
-   ============================================================ */
+============================================================ */
 function showFamilyFilters() {
-  const awsW = document.getElementById("awsFamilyWrap");
-  const azW  = document.getElementById("azFamilyWrap");
-  const gcpW = document.getElementById("gcpFamilyWrap");
-  if (awsW) awsW.style.display = "flex";
-  if (azW)  azW.style.display  = "flex";
-  if (gcpW) gcpW.style.display = "flex";
+  ["awsFamilyWrap", "azFamilyWrap", "gcpFamilyWrap"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "flex";
+  });
 }
+
 function resetFamilyFilters() {
-  const awsW = document.getElementById("awsFamilyWrap");
-  const azW  = document.getElementById("azFamilyWrap");
-  const gcpW = document.getElementById("gcpFamilyWrap");
-  if (awsW) awsW.style.display = "none";
-  if (azW)  azW.style.display  = "none";
-  if (gcpW) gcpW.style.display = "none";
+  ["awsFamilyWrap", "azFamilyWrap", "gcpFamilyWrap"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
 }
 
 /* ============================================================
-   STORAGE HELPERS
-   ============================================================ */
+   STORAGE HELPERS (delegate to utils.js)
+============================================================ */
 function getAwsStorageMonthly(type, gb) {
   return getAwsStorageMonthlyFromCfg(type, gb, STORAGE_CFG.aws);
 }
@@ -47,7 +48,7 @@ function getGcpStorageMonthly(type, gb) {
 
 /* ============================================================
    findBestGcp() — implemented similar to AWS/Azure logic
-   ============================================================ */
+============================================================ */
 function findBestGcp(list, vcpu, ram, os, family) {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error("GCP price list is empty");
@@ -77,17 +78,19 @@ function findBestGcp(list, vcpu, ram, os, family) {
       bestScore = score;
     }
   }
+
   return best;
 }
 
 /* ============================================================
    MAIN compare() — AWS + Azure + GCP
-   ============================================================ */
+============================================================ */
 export async function compare(resetFamilies = false) {
   const btn = document.getElementById("compareBtn");
   if (btn) btn.disabled = true;
   setStatus("Fetching local prices…");
 
+  // Reset dropdowns on first compare
   if (resetFamilies) {
     ["awsFamily", "azFamily", "gcpFamily"].forEach(id => {
       const el = document.getElementById(id);
@@ -100,9 +103,10 @@ export async function compare(resetFamilies = false) {
   const ram          = Number(document.getElementById("ram")?.value ?? 0);
   const storageType  = (document.getElementById("storageType")?.value || "hdd").toLowerCase();
   const storageAmtGB = Number(document.getElementById("storageAmt")?.value ?? 0);
-  const familyAws    = document.getElementById("awsFamily")?.value || "";
-  const familyAz     = document.getElementById("azFamily")?.value  || "";
-  const familyGcp    = document.getElementById("gcpFamily")?.value || "";
+
+  const familyAws = document.getElementById("awsFamily")?.value || "";
+  const familyAz  = document.getElementById("azFamily")?.value  || "";
+  const familyGcp = document.getElementById("gcpFamily")?.value || "";
 
   try {
     resetCards();
@@ -117,7 +121,7 @@ export async function compare(resetFamilies = false) {
         pricePerHourUSD: a.pricePerHourUSD, region: a.region
       } : null;
     } catch (e) {
-      awsCard = { error: e.message || String(e) };
+      awsCard = { error: e.message };
     }
 
     /* ---------- Azure ---------- */
@@ -129,7 +133,7 @@ export async function compare(resetFamilies = false) {
         pricePerHourUSD: z.pricePerHourUSD, region: z.region, os
       } : null;
     } catch (e) {
-      azCard = { error: e.message || String(e) };
+      azCard = { error: e.message };
     }
 
     /* ---------- GCP ---------- */
@@ -141,12 +145,12 @@ export async function compare(resetFamilies = false) {
         pricePerHourUSD: g.pricePerHourUSD, region: g.region
       } : null;
     } catch (e) {
-      gcpCard = { error: e.message || String(e) };
+      gcpCard = { error: e.message };
     }
 
     /* ============================================================
-       STORAGE DISPLAY
-       ============================================================ */
+       STORAGE LABEL RENDER
+    ============================================================ */
     const selLabel = `${storageAmtGB} GB ${storageType.toUpperCase()}`;
     safeSetText("awsStorageSel", `Storage: ${selLabel}`);
     safeSetText("azStorageSel",  `Storage: ${selLabel}`);
@@ -166,10 +170,8 @@ export async function compare(resetFamilies = false) {
     const gcpStorageHr      = gcpStorageMonthly != null ? gcpStorageMonthly / HRS_PER_MONTH : null;
 
     /* ============================================================
-       RENDER PROVIDERS
-       ============================================================ */
-
-    /* ---- AWS ---- */
+       RENDER AWS
+    ============================================================ */
     if (!awsCard || awsCard.error) {
       document.getElementById("awsInstance").innerHTML =
         `<strong>Recommended Instance:</strong> Error: ${awsCard?.error ?? "No match"}`;
@@ -182,7 +184,9 @@ export async function compare(resetFamilies = false) {
       safeSetText("awsMonthly", `≈ Monthly: ${fmt(monthly(awsCard.pricePerHourUSD))}`);
     }
 
-    /* ---- Azure ---- */
+    /* ============================================================
+       RENDER AZURE
+    ============================================================ */
     if (!azCard || azCard.error) {
       document.getElementById("azInstance").innerHTML =
         `<strong>Recommended VM Size:</strong> Error: ${azCard?.error ?? "No match"}`;
@@ -195,7 +199,9 @@ export async function compare(resetFamilies = false) {
       safeSetText("azMonthly", `≈ Monthly: ${fmt(monthly(azCard.pricePerHourUSD))}`);
     }
 
-    /* ---- GCP ---- */
+    /* ============================================================
+       RENDER GCP
+    ============================================================ */
     if (!gcpCard || gcpCard.error) {
       document.getElementById("gcpInstance").innerHTML =
         `<strong>Recommended Machine:</strong> Error: ${gcpCard?.error ?? "No match"}`;
@@ -209,8 +215,8 @@ export async function compare(resetFamilies = false) {
     }
 
     /* ============================================================
-       RENDER STORAGE COSTS
-       ============================================================ */
+       STORAGE COST RENDER
+    ============================================================ */
     safeSetText("awsStoragePriceHr", fmt(awsStorageHr));
     safeSetText("awsStorageMonthly", fmt(awsStorageMonthly));
 
@@ -229,36 +235,31 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        TOTAL COSTS
-       ============================================================ */
-    const awsComputeHr    = awsCard?.pricePerHourUSD ?? null;
-    const awsComputeMonth = monthly(awsComputeHr);
-    const awsTotalHr      = sumSafe(awsComputeHr, awsStorageHr);
-    const awsTotalMonth   = sumSafe(awsComputeMonth, awsStorageMonthly);
+    ============================================================ */
+    const awsTotalHr  = sumSafe(awsCard?.pricePerHourUSD,  awsStorageHr);
+    const awsTotalMon = sumSafe(monthly(awsCard?.pricePerHourUSD), awsStorageMonthly);
 
-    const azComputeHr    = azCard?.pricePerHourUSD ?? null;
-    const azComputeMonth = monthly(azComputeHr);
-    const azTotalHr      = sumSafe(azComputeHr, azStorageHr);
-    const azTotalMonth   = sumSafe(azComputeMonth, azStorageMonthly);
+    const azTotalHr  = sumSafe(azCard?.pricePerHourUSD,  azStorageHr);
+    const azTotalMon = sumSafe(monthly(azCard?.pricePerHourUSD), azStorageMonthly);
 
-    const gcpComputeHr    = gcpCard?.pricePerHourUSD ?? null;
-    const gcpComputeMonth = monthly(gcpComputeHr);
-    const gcpTotalHr      = sumSafe(gcpComputeHr, gcpStorageHr);
-    const gcpTotalMonth   = sumSafe(gcpComputeMonth, gcpStorageMonthly);
+    const gcpTotalHr  = sumSafe(gcpCard?.pricePerHourUSD, gcpStorageHr);
+    const gcpTotalMon = sumSafe(monthly(gcpCard?.pricePerHourUSD), gcpStorageMonthly);
 
     safeSetText("awsTotalHr",      fmt(awsTotalHr));
-    safeSetText("awsTotalMonthly", fmt(awsTotalMonth));
+    safeSetText("awsTotalMonthly", fmt(awsTotalMon));
 
     safeSetText("azTotalHr",       fmt(azTotalHr));
-    safeSetText("azTotalMonthly",  fmt(azTotalMonth));
+    safeSetText("azTotalMonthly",  fmt(azTotalMon));
 
     safeSetText("gcpTotalHr",      fmt(gcpTotalHr));
-    safeSetText("gcpTotalMonthly", fmt(gcpTotalMonth));
+    safeSetText("gcpTotalMonthly", fmt(gcpTotalMon));
 
     /* ============================================================
        DONE
-       ============================================================ */
+    ============================================================ */
     showFamilyFilters();
     setStatus("Comparison complete ✓");
+
   } catch (err) {
     console.error(err);
     setStatus(`Error: ${err.message}`, "error");
@@ -272,8 +273,8 @@ window.compare = compare;
 
 /* ============================================================
    BOOTSTRAP
-   ============================================================ */
-document.addEventListener("DOMContentLoaded", async () => {
+============================================================ */
+document.addEventListener("DOMContentLoaded", () => {
 
   fillSelect("os",   [{ value: "Linux", text: "Linux" }, { value: "Windows", text: "Windows" }]);
   fillSelect("cpu",  [1, 2, 4, 8, 16].map(v => ({ value: v, text: v })));
