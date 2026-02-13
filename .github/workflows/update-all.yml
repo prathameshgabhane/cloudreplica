@@ -7,7 +7,7 @@ permissions:
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 */6 * * *"   # Every 6 hours at minute 30 UTC
+    - cron: "30 0 * * 1"   # Once a week (Monday at 00:30 UTC)
 
 concurrency:
   group: update-all-cloud-prices
