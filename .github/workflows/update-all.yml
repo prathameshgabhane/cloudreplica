@@ -45,11 +45,9 @@ jobs:
         with:
           node-version: '20'
 
-      # Build final merged data/prices.json
       - name: Aggregate cloud provider files
         run: node scripts/aggregate/build-prices.js
 
-      # Publish to docs/data/ for GitHub Pages
       - name: Publish data to docs/
         run: |
           mkdir -p docs/data/aws docs/data/azure docs/data/gcp
@@ -58,8 +56,17 @@ jobs:
           cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
           cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
 
-      # FINAL commit (only one!)
+      - name: Detect changes
+        id: git_status
+        run: |
+          if git diff --quiet -- docs/data data; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Commit final merged cloud prices
+        if: steps.git_status.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Auto-update ALL cloud prices"
