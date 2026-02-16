@@ -21,9 +21,15 @@ const REGION = process.env.GCP_REGION || "us-east1";
  * GCP Price List API (PUBLIC MIRROR THAT STILL WORKS)
  * Google removed the old appspot endpoint.
  * This GCS-hosted mirror is the correct one to use.
+ *
+ * NOTE: Replaced by official Cloud Billing Catalog API below.
  */
-const GCP_PRICING_URL =
-  "https://storage.googleapis.com/cloudpricingcalculator.appspot.com/static/data/pricelist.json";
+// const GCP_PRICING_URL =
+//   "https://storage.googleapis.com/cloudpricingcalculator.appspot.com/static/data/pricelist.json";
+
+// ---- New: Catalog API config ----
+const CURRENCY = process.env.GCP_CURRENCY || "USD";
+const API_KEY  = process.env.GCP_PRICE_API_KEY; // set via GitHub Actions secret
 
 /**
  * Allowed VM families for our tool:
@@ -53,16 +59,164 @@ function classifyGcpInstance(instance) {
   return null;
 }
 
+// ------------------------------
+// Minimal Catalog API adapter that returns `json` compatible with
+// the old mirror: { gcp_price_list: { <id>: {region, machine_type, os, price_per_hour, vcpu, memory_gb } } }
+// so the rest of your script remains 100% unchanged.
+// ------------------------------
+
+// 1) List all services (to find "Compute Engine")
+async function listServices() {
+  const url = `https://cloudbilling.googleapis.com/v1/services?key=${API_KEY}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`[GCP] services HTTP ${r.status}`);
+  const j = await r.json();
+  return j.services || [];
+}
+
+// 2) List SKUs for a service (paged, 5000/page). Supports currencyCode. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+async function listSkus(serviceId, pageToken = "") {
+  const base = `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000&key=${API_KEY}`;
+  const url  = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`[GCP] skus HTTP ${r.status}`);
+  return await r.json();
+}
+
+// 3) Price extractor (units+nanos from tier 0). [2](https://stackoverflow.com/questions/76405445/how-to-fetch-billing-info-for-google-cloud-platform-using-python)
+function extractHourlyPrice(pricingInfo) {
+  for (const p of pricingInfo || []) {
+    const expr = p.pricingExpression;
+    if (!expr || !expr.tieredRates?.[0]?.unitPrice) continue;
+    const u = expr.tieredRates[0].unitPrice;
+    const price = Number(u.units || 0) + Number(u.nanos || 0) / 1e9;
+    if (price > 0) return price;
+  }
+  return null;
+}
+
+// 4) Try to get machine type from attributes or displayName (e.g., n2-standard-4)
+function inferMachineType(sku) {
+  const attrs = sku.attributes || {};
+  if (attrs.machineType) return String(attrs.machineType).toLowerCase();
+
+  const s = (sku.displayName || "").toLowerCase();
+  const m = s.match(/\b([a-z0-9]+-(?:standard|highmem|highcpu|c2d|c3|c4|c3d|c4d|c4a|n1|n2|n2d|n4|t2a|t2d|e2)-\d+)\b/);
+  return m ? m[1] : null;
+}
+
+// 5) Best-effort vCPU/RAM derivation (safe common cases only)
+// (kept minimal so your aggregator still gets numbers when Catalog lacks attributes)
+function deriveVcpuRamFromType(mt) {
+  if (!mt) return { vcpu: undefined, ram: undefined };
+  const m = mt.match(/^([a-z0-9]+)-([a-z]+[a-z0-9]*)-(\d+)$/);
+  if (!m) return { vcpu: undefined, ram: undefined };
+  const series = m[1];
+  const cls    = m[2];
+  const vcpu   = Number(m[3]);
+  if (!vcpu) return { vcpu: undefined, ram: undefined };
+
+  let per = undefined;
+
+  if (series.startsWith("n1")) {
+    if (cls.startsWith("standard")) per = 3.75;
+    if (cls.startsWith("highmem"))  per = 6.5;
+    if (cls.startsWith("highcpu"))  per = 0.9;
+  }
+  if (
+    series.startsWith("n2") || series.startsWith("n2d") ||
+    series.startsWith("e2") || series.startsWith("t2a") ||
+    series.startsWith("t2d") || series.startsWith("n4") ||
+    series.startsWith("c3")  || series.startsWith("c4")
+  ) {
+    if (cls.startsWith("standard")) per = 4;
+    if (cls.startsWith("highmem"))  per = 8;
+    if (cls.startsWith("highcpu"))  per = 2;
+  }
+  if (series.startsWith("c2")) per = 4;
+
+  if (!per) return { vcpu: undefined, ram: undefined };
+  return { vcpu, ram: vcpu * per };
+}
+
 async function fetchGcpPrices() {
-  logStart("[GCP] Fetching retail PAYG pricing...");
+  logStart("[GCP] Fetching retail PAYG pricing via Catalog API...");
 
-  const res = await fetch(GCP_PRICING_URL);
-  if (!res.ok) throw new Error(`[GCP] Pricing HTTP ${res.status}`);
+  if (!API_KEY) throw new Error("[GCP] Missing GCP_PRICE_API_KEY");
 
-  const data = await res.json();
+  // a) Find "Compute Engine"
+  const services = await listServices(); // Catalog API services listing. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+  const compute = services.find(s => /compute engine/i.test(s.displayName));
+  if (!compute) throw new Error("[GCP] Compute Engine service not found");
+  const serviceId = compute.name.split("/")[1];
+
+  // b) Walk SKUs and build a map shaped like the old mirror json
+  const gcp_price_list = {};
+  let pageToken = "";
+  let counter = 0;
+
+  do {
+    const { skus = [], nextPageToken } = await listSkus(serviceId, pageToken);
+
+    for (const sku of skus) {
+      const cat = sku.category || {};
+      if (cat.resourceFamily !== "Compute") continue;
+      if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
+
+      // Region fit (Catalog exposes serviceRegions per SKU). [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+      const regions = (sku.serviceRegions || []).map(r => r.toLowerCase());
+      if (regions.length && !regions.includes(REGION.toLowerCase())) continue;
+
+      // Restrict to per-instance SKUs (not per-core/per-GB) so your downstream stays as-is
+      const dn = sku.displayName || "";
+      const isInstance = /Instance (?:running|hour)|Predefined Instance/i.test(dn);
+      if (!isInstance) continue;
+
+      // Machine type & category
+      const mt = inferMachineType(sku); // e.g., "n2-standard-4"
+      if (!mt) continue;
+
+      const machineType = mt; // keep kebab-case for internal calc, convert later
+      const instance = machineType.replace(/-/g, "_").toUpperCase();
+      const fam = classifyGcpInstance(instance);
+      if (!fam) continue;
+
+      // OS: default Linux unless Windows explicitly present
+      const os = /windows/i.test(dn) ? "Windows" : "Linux";
+
+      const price = extractHourlyPrice(sku.pricingInfo);
+      if (!(price > 0)) continue;
+
+      // vCPU / RAM
+      const a = sku.attributes || {};
+      let vcpu = a.vcpu ? Number(a.vcpu) : undefined;
+      let ram  = a.memoryGb ? Number(a.memoryGb) : undefined;
+
+      if (!vcpu || !ram) {
+        const d = deriveVcpuRamFromType(machineType);
+        vcpu = vcpu || d.vcpu;
+        ram  = ram  || d.ram;
+      }
+
+      if (!vcpu || !ram) continue;
+
+      // Build an entry compatible with your old loop expectations
+      const key = `sku_${++counter}`;
+      gcp_price_list[key] = {
+        region: REGION,
+        machine_type: machineType,       // original code converts this to instance with underscores
+        os,                              // "Linux" | "Windows"
+        price_per_hour: price,
+        vcpu,
+        memory_gb: ram
+      };
+    }
+
+    pageToken = nextPageToken || "";
+  } while (pageToken);
+
   logDone("[GCP] Pricing file loaded");
-
-  return data;
+  return { gcp_price_list };
 }
 
 async function main() {
