@@ -65,13 +65,43 @@ function classifyGcpInstance(instance) {
 // so the rest of your script remains 100% unchanged.
 // ------------------------------
 
-// 1) List all services (to find "Compute Engine")
+// 1) List ALL services (to find "Compute Engine") — now with pagination
 async function listServices() {
-  const url = `https://cloudbilling.googleapis.com/v1/services?key=${API_KEY}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`[GCP] services HTTP ${r.status}`);
-  const j = await r.json();
-  return j.services || [];
+  const base = `https://cloudbilling.googleapis.com/v1/services?key=${API_KEY}`;
+  let url = base;
+  let all = [];
+
+  while (true) { // Catalog list endpoints are paginated. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+    const r = await fetch(url);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      throw new Error(`[GCP] services HTTP ${r.status} ${txt}`);
+    }
+    const j = await r.json();
+    if (Array.isArray(j.services)) all = all.concat(j.services);
+    if (!j.nextPageToken) break;
+    url = `${base}&pageToken=${encodeURIComponent(j.nextPageToken)}`;
+  }
+
+  if (!all.length) {
+    throw new Error(`[GCP] No services returned by Catalog API. Ensure "Cloud Billing API" is ENABLED and the API key is restricted to Cloud Billing API.`);
+  }
+  return all;
+}
+
+// 1b) Robustly pick Compute Engine service
+function pickComputeService(services) {
+  // Prefer exact match first, then relaxed "compute" contains
+  let svc = services.find(s => String(s.displayName).trim().toLowerCase() === "compute engine");
+  if (!svc) svc = services.find(s => /(^|\s)compute(\s|$)/i.test(String(s.displayName)));
+
+  if (!svc) {
+    const sample = services.slice(0, 12).map(s => s.displayName).join(", ");
+    throw new Error(
+      `[GCP] Compute Engine service not found after scanning ${services.length} services (sample: [${sample}]).`
+    );
+  }
+  return svc;
 }
 
 // 2) List SKUs for a service (paged, 5000/page). Supports currencyCode. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
@@ -79,7 +109,10 @@ async function listSkus(serviceId, pageToken = "") {
   const base = `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000&key=${API_KEY}`;
   const url  = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`[GCP] skus HTTP ${r.status}`);
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`[GCP] skus HTTP ${r.status} ${txt}`);
+  }
   return await r.json();
 }
 
@@ -106,7 +139,6 @@ function inferMachineType(sku) {
 }
 
 // 5) Best-effort vCPU/RAM derivation (safe common cases only)
-// (kept minimal so your aggregator still gets numbers when Catalog lacks attributes)
 function deriveVcpuRamFromType(mt) {
   if (!mt) return { vcpu: undefined, ram: undefined };
   const m = mt.match(/^([a-z0-9]+)-([a-z]+[a-z0-9]*)-(\d+)$/);
@@ -144,10 +176,9 @@ async function fetchGcpPrices() {
 
   if (!API_KEY) throw new Error("[GCP] Missing GCP_PRICE_API_KEY");
 
-  // a) Find "Compute Engine"
-  const services = await listServices(); // Catalog API services listing. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
-  const compute = services.find(s => /compute engine/i.test(s.displayName));
-  if (!compute) throw new Error("[GCP] Compute Engine service not found");
+  // a) Find "Compute Engine" (now scans all pages)
+  const services = await listServices(); // Catalog API services listing (paginated). [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+  const compute = pickComputeService(services);
   const serviceId = compute.name.split("/")[1];
 
   // b) Walk SKUs and build a map shaped like the old mirror json
