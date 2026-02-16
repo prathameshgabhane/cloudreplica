@@ -32,7 +32,7 @@ const CURRENCY = process.env.GCP_CURRENCY || "USD";
 const API_KEY  = process.env.GCP_PRICE_API_KEY; // set via GitHub Actions secret
 
 // ---- Important: Pin to the official Compute Engine service ID ----
-// Google’s API reference shows Compute Engine as services/6F81-5844-456A. [1](https://googleapis.github.io/google-api-python-client/docs/dyn/cloudbilling_v1.services.skus.html)[2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
+// Google’s API reference shows Compute Engine as services/6F81-5844-456A. [1](https://www.owox.com/blog/articles/bigquery-public-datasets)
 const COMPUTE_SERVICE_ID = "6F81-5844-456A";
 
 /**
@@ -69,7 +69,7 @@ function classifyGcpInstance(instance) {
 // so the rest of your script remains 100% unchanged.
 // ------------------------------
 
-// List SKUs for a service (paged, 5000/page). Supports currencyCode. [2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
+// List SKUs for a service (paged, 5000/page). Supports currencyCode. [1](https://www.owox.com/blog/articles/bigquery-public-datasets)
 async function listSkus(serviceId, pageToken = "") {
   const base = `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000&key=${API_KEY}`;
   const url  = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
@@ -81,7 +81,7 @@ async function listSkus(serviceId, pageToken = "") {
   return await r.json();
 }
 
-// Price extractor (units+nanos from tier 0). [3](https://stackoverflow.com/questions/76405445/how-to-fetch-billing-info-for-google-cloud-platform-using-python)
+// Price extractor (units+nanos from tier 0). [2](https://www.oracle.com/cloud/compute/pricing/)
 function extractHourlyPrice(pricingInfo) {
   for (const p of pricingInfo || []) {
     const expr = p.pricingExpression;
@@ -127,8 +127,8 @@ function deriveVcpuRamFromType(mt) {
     series.startsWith("c3")  || series.startsWith("c4")
   ) {
     if (cls.startsWith("standard")) per = 4;
-    if (cls.startsWith("highmem"))  per = 8;
-    if (cls.startsWith("highcpu"))  per = 2;
+    if (cls.startsWith("highmem"))  return { vcpu, ram: vcpu * 8 };
+    if (cls.startsWith("highcpu"))  return { vcpu, ram: vcpu * 2 };
   }
   if (series.startsWith("c2")) per = 4;
 
@@ -136,79 +136,136 @@ function deriveVcpuRamFromType(mt) {
   return { vcpu, ram: vcpu * per };
 }
 
+// ---------- Linux composition fallback helpers ----------
+
+// Identify Linux per‑unit SKUs like "N2 Instance Core running..." / "N2 Instance Ram running..."
+function parseSeriesUnitRate(sku) {
+  const name = (sku.displayName || "").toLowerCase();
+
+  // Exclude Windows/license SKUs for the Linux fallback
+  if (/windows|license/i.test(name)) return null;
+
+  // Grab series + (core|ram)
+  const m = name.match(/\b(n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\binstance\s+(core|ram)\b/i);
+  if (!m) return null;
+
+  const series = m[1].toLowerCase();
+  const kind   = m[2].toLowerCase(); // "core" or "ram"
+  const price  = extractHourlyPrice(sku.pricingInfo);
+  if (!(price > 0)) return null;
+
+  return { series, kind, price };
+}
+
+// Build Linux unit rate maps per series for the current REGION
+function buildSeriesUnitRateMaps(allSkus, region) {
+  const maps = {}; // { [series]: { core?: rate, ram?: rate } }
+  for (const sku of allSkus) {
+    const cat = sku.category || {};
+    if (cat.resourceFamily !== "Compute") continue;
+    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
+
+    const regions = (sku.serviceRegions || []).map(r => r.toLowerCase());
+    if (regions.length && !regions.includes(region.toLowerCase())) continue;
+
+    const info = parseSeriesUnitRate(sku);
+    if (!info) continue;
+
+    if (!maps[info.series]) maps[info.series] = {};
+    maps[info.series][info.kind] = info.price;
+  }
+  return maps;
+}
+
+// Series token from machine type, e.g. "n2-standard-4" -> "n2"
+function seriesFromMachineType(mt) {
+  const m = String(mt || "").toLowerCase().match(/^([a-z0-9]+)-/);
+  return m ? m[1] : null;
+}
+
 async function fetchGcpPrices() {
   logStart("[GCP] Fetching retail PAYG pricing via Catalog API...");
 
   if (!API_KEY) throw new Error("[GCP] Missing GCP_PRICE_API_KEY");
 
-  // Use the well-known Compute Engine service ID (bypass services.list pagination/ordering).
-  // Ref: API docs/examples show Compute Engine as services/6F81-5844-456A. [1](https://googleapis.github.io/google-api-python-client/docs/dyn/cloudbilling_v1.services.skus.html)[2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
+  // Use well-known Compute Engine service id; avoid services.list pagination/ordering issues. [1](https://www.owox.com/blog/articles/bigquery-public-datasets)
   const serviceId = COMPUTE_SERVICE_ID;
 
-  // Walk SKUs and build a map shaped like the old mirror json
-  const gcp_price_list = {};
+  // 1) Pull ALL SKUs once (paged) for this service
+  const allSkus = [];
   let pageToken = "";
-  let counter = 0;
-
   do {
     const { skus = [], nextPageToken } = await listSkus(serviceId, pageToken);
-
-    for (const sku of skus) {
-      const cat = sku.category || {};
-      if (cat.resourceFamily !== "Compute") continue;
-      if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
-
-      // Region fit (Catalog exposes serviceRegions per SKU). [4](https://docs.cloud.google.com/billing/v1/how-tos/catalog-api)
-      const regions = (sku.serviceRegions || []).map(r => r.toLowerCase());
-      if (regions.length && !regions.includes(REGION.toLowerCase())) continue;
-
-      // Restrict to per-instance SKUs (not per-core/per-GB) so your downstream stays as-is
-      const dn = sku.displayName || "";
-      const isInstance = /Instance (?:running|hour)|Predefined Instance/i.test(dn);
-      if (!isInstance) continue;
-
-      // Machine type & category
-      const mt = inferMachineType(sku); // e.g., "n2-standard-4"
-      if (!mt) continue;
-
-      const machineType = mt; // keep kebab-case for internal calc, convert later
-      const instance = machineType.replace(/-/g, "_").toUpperCase();
-      const fam = classifyGcpInstance(instance);
-      if (!fam) continue;
-
-      // OS: default Linux unless Windows explicitly present
-      const os = /windows/i.test(dn) ? "Windows" : "Linux";
-
-      const price = extractHourlyPrice(sku.pricingInfo);
-      if (!(price > 0)) continue;
-
-      // vCPU / RAM
-      const a = sku.attributes || {};
-      let vcpu = a.vcpu ? Number(a.vcpu) : undefined;
-      let ram  = a.memoryGb ? Number(a.memoryGb) : undefined;
-
-      if (!vcpu || !ram) {
-        const d = deriveVcpuRamFromType(machineType);
-        vcpu = vcpu || d.vcpu;
-        ram  = ram  || d.ram;
-      }
-
-      if (!vcpu || !ram) continue;
-
-      // Build an entry compatible with your old loop expectations
-      const key = `sku_${++counter}`;
-      gcp_price_list[key] = {
-        region: REGION,
-        machine_type: machineType,       // original code converts this to instance with underscores
-        os,                              // "Linux" | "Windows"
-        price_per_hour: price,
-        vcpu,
-        memory_gb: ram
-      };
-    }
-
+    allSkus.push(...skus);
     pageToken = nextPageToken || "";
   } while (pageToken);
+
+  // 2) Pre-build Linux unit-rate maps per series for fallback composition
+  const linuxSeriesRates = buildSeriesUnitRateMaps(allSkus, REGION);
+
+  // 3) Build the legacy-shaped map your bottom half expects
+  const gcp_price_list = {};
+  let counter = 0;
+
+  for (const sku of allSkus) {
+    const cat = sku.category || {};
+    if (cat.resourceFamily !== "Compute") continue;
+    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
+
+    // Region check (Catalog exposes serviceRegions per SKU). [3](https://discuss.google.dev/t/how-to-programmatically-retrieve-gcp-billing-cost-api-vs-bigquery-export/257728)
+    const regions = (sku.serviceRegions || []).map(r => r.toLowerCase());
+    if (regions.length && !regions.includes(REGION.toLowerCase())) continue;
+
+    // Prefer per‑instance SKUs
+    const dn = sku.displayName || "";
+    const isInstance = /Instance (?:running|hour)|Predefined Instance/i.test(dn);
+    if (!isInstance) continue;
+
+    // Machine type & family
+    const mt = inferMachineType(sku);
+    if (!mt) continue;
+
+    const instance = mt.replace(/-/g, "_").toUpperCase();
+    const fam = classifyGcpInstance(instance);
+    if (!fam) continue;
+
+    // OS: default Linux unless Windows explicitly present
+    const os = /windows/i.test(dn) ? "Windows" : "Linux";
+
+    // Price + hardware
+    const price = extractHourlyPrice(sku.pricingInfo);
+    const a = sku.attributes || {};
+    let vcpu = a.vcpu ? Number(a.vcpu) : undefined;
+    let ram  = a.memoryGb ? Number(a.memoryGb) : undefined;
+
+    if (!vcpu || !ram) {
+      const d = deriveVcpuRamFromType(mt);
+      vcpu = vcpu || d.vcpu;
+      ram  = ram  || d.ram;
+    }
+
+    // If per‑instance SKU lacks price/hardware, try Linux composition fallback
+    let finalPrice = (price && vcpu && ram) ? price : null;
+    if (!finalPrice && os === "Linux" && vcpu && ram) {
+      const series = seriesFromMachineType(mt);
+      const rates = series ? linuxSeriesRates[series] : undefined;
+      if (rates && rates.core && rates.ram) {
+        finalPrice = (vcpu * rates.core) + (ram * rates.ram);
+      }
+    }
+
+    if (!finalPrice || !vcpu || !ram) continue;
+
+    const key = `sku_${++counter}`;
+    gcp_price_list[key] = {
+      region: REGION,
+      machine_type: mt,         // original code converts this to instance with underscores
+      os,                       // "Linux" | "Windows"
+      price_per_hour: finalPrice,
+      vcpu,
+      memory_gb: ram
+    };
+  }
 
   logDone("[GCP] Pricing file loaded");
   return { gcp_price_list };
