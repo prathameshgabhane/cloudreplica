@@ -30,7 +30,7 @@ const {
 const OUT       = path.join("data", "gcp", "gcp.prices.json");
 const REGION    = process.env.GCP_REGION    || "us-east1";
 const CURRENCY  = process.env.GCP_CURRENCY  || "USD";
-const API_KEY   = process.env.GCP_PRICE_API_KEY;  // Catalog
+const API_KEY   = process.env.GCP_PRICE_API_KEY;  // Catalog API (public)
 const PROJECT   = process.env.GCP_PROJECT_ID;     // for Compute API fallback
 
 // Catalog: list SKUs (paged)
@@ -115,14 +115,20 @@ async function fetchGcpPrices() {
     if (!PROJECT) {
       console.warn("[GCP] Fallback needed but GCP_PROJECT_ID not set; skipping composition.");
     } else {
-      const token = await getAccessTokenFromADC();                // OIDC
+      // Ensure we have a short-lived access token from the workflow OIDC step
+      const token = await getAccessTokenFromADC(); // reads GCLOUD_ACCESS_TOKEN env
+      if (!token) throw new Error("[GCP] Missing OIDC access token in env (GCLOUD_ACCESS_TOKEN).");
+
       const zones = await listRegionZones(PROJECT, REGION, token);
+      if (!zones.length) {
+        console.warn(`[GCP] No zones found under region prefix '${REGION}-' for project '${PROJECT}'.`);
+      }
       const mtMap = new Map(); // machine_type -> { vcpu, ramGiB }
 
       for (const z of zones) {
         const mts = await listZoneMachineTypes(PROJECT, z, token);
         for (const mt of mts) {
-          const name = String(mt.name).toLowerCase();             // e.g., n2-standard-4
+          const name = String(mt.name).toLowerCase(); // e.g., n2-standard-4
           if (!mtMap.has(name)) {
             const vcpu = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
@@ -136,8 +142,8 @@ async function fetchGcpPrices() {
         const fam = classifyGcpInstance(instTok);
         if (!fam) continue;
 
-        // series = token before first dash
-        const series = mt.split("-")[0];           // e.g., "n2"
+        // series = token before first dash (e.g., 'n2')
+        const series = mt.split("-")[0];
         const rates  = linuxSeriesRates[series];
         if (!rates || !rates.core || !rates.ram) continue;
 
@@ -162,7 +168,10 @@ async function fetchGcpPrices() {
       .filter(s => (s.category?.resourceFamily === "Compute") && regionMatches(s.serviceRegions, REGION))
       .slice(0, 15)
       .map(s => s.displayName);
-    console.warn(`[GCP] DEBUG: 0 rows after per-instance and composition in '${REGION}'. Sample:\n${JSON.stringify(sample, null, 2)}`);
+    console.warn(
+      `[GCP] DEBUG: 0 rows after per-instance and composition in '${REGION}'. ` +
+      `Sample:\n${JSON.stringify(sample, null, 2)}`
+    );
   }
 
   logDone("[GCP] Pricing file loaded");
