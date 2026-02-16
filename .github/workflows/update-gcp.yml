@@ -39,15 +39,65 @@ jobs:
           echo "Currency:$GCP_CURRENCY"
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: "us-east1"
+          GCP_REGION: "us-east1"          # (REGION)
           GCP_CURRENCY: "USD"
+
+      # >>> NEW: Hard pre-flight checks + live Compute API probe
+      - name: Pre-flight checks (Catalog + Fallback)
+        shell: bash
+        env:
+          GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: "us-east1"          # (REGION)
+          GCP_CURRENCY: "USD"
+          OIDC_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          echo "== Pre-flight =="
+          echo "Region: ${GCP_REGION}"
+          echo "Currency: ${GCP_CURRENCY}"
+
+          # 1) API key check (Catalog path)
+          if [[ -z "${GCP_PRICE_API_KEY:-}" ]]; then
+            echo "::error::GCP_PRICE_API_KEY is empty (Catalog API will not return data)."
+            exit 1
+          fi
+          echo "Catalog: API key is set ✔ (value masked)"
+
+          # 2) Project ID check (fallback path)
+          if [[ -z "${GCP_PROJECT_ID:-}" ]]; then
+            echo "::error::GCP_PROJECT_ID is empty (fallback composition will be skipped)."
+            exit 1
+          fi
+          echo "Fallback: Project ID is set ✔ -> ${GCP_PROJECT_ID}"
+
+          # 3) OIDC token presence check (fallback path)
+          if [[ -z "${OIDC_TOKEN:-}" ]]; then
+            echo "::error::OIDC access token not found; google-github-actions/auth did not output access_token."
+            exit 1
+          fi
+          echo "Fallback: OIDC access token is present ✔"
+
+          # 4) Live probe: zones.list with the same REST path used by the Node script
+          ZONES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${OIDC_TOKEN}" \
+              "https://compute.googleapis.com/compute/v1/projects/${GCP_PROJECT_ID}/zones")
+          echo "Compute API probe status: ${ZONES_STATUS}"
+          if [[ "${ZONES_STATUS}" != "200" ]]; then
+            echo "::error::Compute API probe failed (HTTP ${ZONES_STATUS}). Ensure Compute Engine API is enabled and the service account has roles/compute.viewer."
+            exit 1
+          fi
+          echo "Compute API probe OK ✔ (zones.list)"
+
+          # Ensure output dir exists so the write never fails on missing path
+          mkdir -p data/gcp
 
       - name: Fetch GCP prices (FULL mode)
         run: node scripts/providers/gcp.fetch.js
         env:
           # Public Catalog (free)
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
-          GCP_REGION: "us-east1"
+          GCP_REGION: "us-east1"          # (REGION)
           GCP_CURRENCY: "USD"
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
