@@ -63,7 +63,7 @@ async function fetchRetailPrices() {
   let next = base, pages = 0, MAX = 200;
 
   while (next && pages < MAX) {
-    const j = await fetchWithRetry(next);   // <<-- RETRY FIX
+    const j = await fetchWithRetry(next);   // retry wrapper
     items.push(...(j.Items || []));
     next = j.NextPageLink || null;
     pages++;
@@ -84,9 +84,9 @@ async function main() {
   const pre = [];
   for (const it of retail) {
 
-    // --- Unit must be hourly
-    const uom = (it.unitOfMeasure || "").toLowerCase();
-    if (!uom.includes("hour")) continue; // FIXED (Azure sometimes returns "1H", "Hour", etc.)
+    // --- Unit must be hourly (Azure varies: "1 Hour", "Hours", "1H", etc.)
+    const uom = String(it.unitOfMeasure || "").toLowerCase();
+    if (!/hour|hrs?|\b1h\b/.test(uom)) continue;
 
     // --- Textual exclusions
     const blob = [
@@ -101,9 +101,9 @@ async function main() {
     if (/\bahb\b|hybrid\s*benefit/.test(blob)) continue;
 
     // --- Instance extraction
-    const skuName = it?.skuName || "";
-    const armSku  = it?.armSkuName || "";
-    const instance = (skuName.split(" ")[0] || armSku || "").trim();
+    const armSku  = (it?.armSkuName || "").trim();
+    const skuName = (it?.skuName || "").trim();
+    const instance = (armSku || skuName.split(" ")[0] || "").trim();
     if (!instance) continue;
     if (!widenAzureSeries(instance)) continue;
 
@@ -149,6 +149,7 @@ async function main() {
 
   const storage = {
     region: REGION,
+    // Example static mappings; swap for a Retail API-based disk fetcher if desired
     ssd_monthly: { 128: 9.6, 256: 19.2 },
     hdd_monthly: { 128: 5.888, 256: 11.328 }
   };
