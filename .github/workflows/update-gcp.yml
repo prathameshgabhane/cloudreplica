@@ -25,4 +25,11 @@ jobs:
       - name: Fetch GCP prices
         run: node scripts/providers/gcp.fetch.js
         env:
+          # Your existing default region alignment
           GCP_REGION: "us-east1"
+
+          # Optional: currency (script defaults to USD if not set)
+          GCP_CURRENCY: "USD"
+
+          # REQUIRED: provide the API key via GitHub Secret (do NOT hardcode)
+          GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
