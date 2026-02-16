@@ -27,20 +27,31 @@ const {
 } = require("../lib/gcp");
 
 // Output & env
-const OUT       = path.join("data", "gcp", "gcp.prices.json");
-const REGION    = process.env.GCP_REGION    || "us-east1";
-const CURRENCY  = process.env.GCP_CURRENCY  || "USD";
-const API_KEY   = process.env.GCP_PRICE_API_KEY;  // Catalog API (public)
-const PROJECT   = process.env.GCP_PROJECT_ID;     // for Compute API fallback
+const OUT      = path.join("data", "gcp", "gcp.prices.json");
+const REGION   = process.env.GCP_REGION   || "us-east1";
+const CURRENCY = process.env.GCP_CURRENCY || "USD";
+const API_KEY  = process.env.GCP_PRICE_API_KEY;   // Catalog API (public)
+const PROJECT  = process.env.GCP_PROJECT_ID;      // for Compute API fallback
 
-// Catalog: list SKUs (paged)
+// Catalog: list SKUs (paged) — prefer OAuth (Bearer) from OIDC; fall back to API key
 async function listSkus(serviceId, pageToken = "") {
   const base =
     `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus` +
-    `?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000&key=${API_KEY}`;
-  const url  = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
+    `?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000`;
+  const url = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
 
-  const r = await fetch(url);
+  const bearer =
+    process.env.GCLOUD_ACCESS_TOKEN ||
+    process.env.GOOGLE_OAUTH_ACCESS_TOKEN ||
+    "";
+
+  const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
+  const finalUrl = bearer ? url : `${url}&key=${API_KEY}`;
+
+  // Small trace so we can see which path we used
+  console.log(`[GCP] Catalog auth: ${bearer ? "OAuth(Bearer)" : "API key"}`);
+
+  const r = await fetch(finalUrl, { headers });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
     throw new Error(`[GCP] skus HTTP ${r.status} ${txt}`);
@@ -51,7 +62,10 @@ async function listSkus(serviceId, pageToken = "") {
 async function fetchGcpPrices() {
   logStart("[GCP] Fetching PAYG pricing via Catalog API (with FULL-mode fallback)…");
 
-  if (!API_KEY) throw new Error("[GCP] Missing GCP_PRICE_API_KEY");
+  // If neither OAuth token nor API key is present, we can't call Catalog.
+  if (!process.env.GCLOUD_ACCESS_TOKEN && !process.env.GCP_PRICE_API_KEY) {
+    throw new Error("[GCP] No Catalog credentials found (need GCLOUD_ACCESS_TOKEN or GCP_PRICE_API_KEY).");
+  }
 
   // 1) Pull all SKUs for Compute Engine (Catalog)
   const allSkus = [];
@@ -64,6 +78,12 @@ async function fetchGcpPrices() {
 
   // Build Linux unit-rate maps (Core/Ram per series) for fallback
   const linuxSeriesRates = buildSeriesUnitRateMaps(allSkus, REGION);
+
+  // Optional: force composition path via env (ignores lack of per-instance rows)
+  const FORCE_COMPOSE = String(process.env.GCP_FORCE_COMPOSE || "").toLowerCase() === "1";
+  if (FORCE_COMPOSE) {
+    console.log("[GCP] FORCE_COMPOSE=1 → will run composition fallback regardless of per-instance results.");
+  }
 
   // 2) First pass: per‑instance SKUs (Linux + Windows)
   const gcp_price_list = {};
@@ -111,7 +131,7 @@ async function fetchGcpPrices() {
 
   // 3) Fallback: compose Linux prices using CPU/RAM unit rates + machineTypes.list
   const haveLinux = Object.values(gcp_price_list).some(v => v.os === "Linux");
-  if (!haveLinux) {
+  if (!haveLinux || FORCE_COMPOSE) {
     if (!PROJECT) {
       console.warn("[GCP] Fallback needed but GCP_PROJECT_ID not set; skipping composition.");
     } else {
@@ -130,7 +150,7 @@ async function fetchGcpPrices() {
         for (const mt of mts) {
           const name = String(mt.name).toLowerCase(); // e.g., n2-standard-4
           if (!mtMap.has(name)) {
-            const vcpu = Number(mt.guestCpus || 0);
+            const vcpu  = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
             if (vcpu > 0 && ramGiB > 0) mtMap.set(name, { vcpu, ramGiB });
           }
