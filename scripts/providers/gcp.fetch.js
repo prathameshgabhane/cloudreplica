@@ -31,6 +31,10 @@ const REGION = process.env.GCP_REGION || "us-east1";
 const CURRENCY = process.env.GCP_CURRENCY || "USD";
 const API_KEY  = process.env.GCP_PRICE_API_KEY; // set via GitHub Actions secret
 
+// ---- Important: Pin to the official Compute Engine service ID ----
+// Google’s API reference shows Compute Engine as services/6F81-5844-456A. [1](https://googleapis.github.io/google-api-python-client/docs/dyn/cloudbilling_v1.services.skus.html)[2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
+const COMPUTE_SERVICE_ID = "6F81-5844-456A";
+
 /**
  * Allowed VM families for our tool:
  * General: N1, N2, N2D, N4, N4A, N4D, C3, C3D, E2, T2A, T2D
@@ -65,46 +69,7 @@ function classifyGcpInstance(instance) {
 // so the rest of your script remains 100% unchanged.
 // ------------------------------
 
-// 1) List ALL services (to find "Compute Engine") — now with pagination
-async function listServices() {
-  const base = `https://cloudbilling.googleapis.com/v1/services?key=${API_KEY}`;
-  let url = base;
-  let all = [];
-
-  while (true) { // Catalog list endpoints are paginated. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
-    const r = await fetch(url);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error(`[GCP] services HTTP ${r.status} ${txt}`);
-    }
-    const j = await r.json();
-    if (Array.isArray(j.services)) all = all.concat(j.services);
-    if (!j.nextPageToken) break;
-    url = `${base}&pageToken=${encodeURIComponent(j.nextPageToken)}`;
-  }
-
-  if (!all.length) {
-    throw new Error(`[GCP] No services returned by Catalog API. Ensure "Cloud Billing API" is ENABLED and the API key is restricted to Cloud Billing API.`);
-  }
-  return all;
-}
-
-// 1b) Robustly pick Compute Engine service
-function pickComputeService(services) {
-  // Prefer exact match first, then relaxed "compute" contains
-  let svc = services.find(s => String(s.displayName).trim().toLowerCase() === "compute engine");
-  if (!svc) svc = services.find(s => /(^|\s)compute(\s|$)/i.test(String(s.displayName)));
-
-  if (!svc) {
-    const sample = services.slice(0, 12).map(s => s.displayName).join(", ");
-    throw new Error(
-      `[GCP] Compute Engine service not found after scanning ${services.length} services (sample: [${sample}]).`
-    );
-  }
-  return svc;
-}
-
-// 2) List SKUs for a service (paged, 5000/page). Supports currencyCode. [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+// List SKUs for a service (paged, 5000/page). Supports currencyCode. [2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
 async function listSkus(serviceId, pageToken = "") {
   const base = `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000&key=${API_KEY}`;
   const url  = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
@@ -116,7 +81,7 @@ async function listSkus(serviceId, pageToken = "") {
   return await r.json();
 }
 
-// 3) Price extractor (units+nanos from tier 0). [2](https://stackoverflow.com/questions/76405445/how-to-fetch-billing-info-for-google-cloud-platform-using-python)
+// Price extractor (units+nanos from tier 0). [3](https://stackoverflow.com/questions/76405445/how-to-fetch-billing-info-for-google-cloud-platform-using-python)
 function extractHourlyPrice(pricingInfo) {
   for (const p of pricingInfo || []) {
     const expr = p.pricingExpression;
@@ -128,7 +93,7 @@ function extractHourlyPrice(pricingInfo) {
   return null;
 }
 
-// 4) Try to get machine type from attributes or displayName (e.g., n2-standard-4)
+// Try to get machine type from attributes or displayName (e.g., n2-standard-4)
 function inferMachineType(sku) {
   const attrs = sku.attributes || {};
   if (attrs.machineType) return String(attrs.machineType).toLowerCase();
@@ -138,7 +103,7 @@ function inferMachineType(sku) {
   return m ? m[1] : null;
 }
 
-// 5) Best-effort vCPU/RAM derivation (safe common cases only)
+// Best-effort vCPU/RAM derivation (safe common cases only)
 function deriveVcpuRamFromType(mt) {
   if (!mt) return { vcpu: undefined, ram: undefined };
   const m = mt.match(/^([a-z0-9]+)-([a-z]+[a-z0-9]*)-(\d+)$/);
@@ -176,12 +141,11 @@ async function fetchGcpPrices() {
 
   if (!API_KEY) throw new Error("[GCP] Missing GCP_PRICE_API_KEY");
 
-  // a) Find "Compute Engine" (now scans all pages)
-  const services = await listServices(); // Catalog API services listing (paginated). [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
-  const compute = pickComputeService(services);
-  const serviceId = compute.name.split("/")[1];
+  // Use the well-known Compute Engine service ID (bypass services.list pagination/ordering).
+  // Ref: API docs/examples show Compute Engine as services/6F81-5844-456A. [1](https://googleapis.github.io/google-api-python-client/docs/dyn/cloudbilling_v1.services.skus.html)[2](https://docs.cloud.google.com/billing/docs/reference/rest/v1/services.skus/list)
+  const serviceId = COMPUTE_SERVICE_ID;
 
-  // b) Walk SKUs and build a map shaped like the old mirror json
+  // Walk SKUs and build a map shaped like the old mirror json
   const gcp_price_list = {};
   let pageToken = "";
   let counter = 0;
@@ -194,7 +158,7 @@ async function fetchGcpPrices() {
       if (cat.resourceFamily !== "Compute") continue;
       if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
 
-      // Region fit (Catalog exposes serviceRegions per SKU). [1](https://www.cloudzero.com/blog/google-cloud-compute-engine-pricing-guide/)
+      // Region fit (Catalog exposes serviceRegions per SKU). [4](https://docs.cloud.google.com/billing/v1/how-tos/catalog-api)
       const regions = (sku.serviceRegions || []).map(r => r.toLowerCase());
       if (regions.length && !regions.includes(REGION.toLowerCase())) continue;
 
