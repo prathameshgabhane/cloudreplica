@@ -33,6 +33,9 @@ function classifyGcpInstance(instance) {
   return null;
 }
 
+/**
+ * Extract hourly price from Catalog pricingInfo.tieredRates[].unitPrice
+ */
 function extractHourlyPrice(pricingInfo) {
   for (const p of pricingInfo || []) {
     const expr = p?.pricingExpression;
@@ -44,6 +47,9 @@ function extractHourlyPrice(pricingInfo) {
   return null;
 }
 
+/**
+ * Infer machine type token (e.g., "n2-standard-4") from attributes or displayName.
+ */
 function inferMachineType(sku) {
   const attrs = sku?.attributes || {};
   if (attrs.machineType) return String(attrs.machineType).toLowerCase();
@@ -55,6 +61,9 @@ function inferMachineType(sku) {
   return m ? m[1] : null;
 }
 
+/**
+ * Conservative vCPU/RAM derivation for predefined families when attributes missing.
+ */
 function deriveVcpuRamFromType(mt) {
   if (!mt) return { vcpu: undefined, ram: undefined };
   const m = mt.match(/^([a-z0-9]+)-([a-z]+[a-z0-9]*)-(\d+)$/);
@@ -84,6 +93,9 @@ function deriveVcpuRamFromType(mt) {
   return { vcpu: undefined, ram: undefined };
 }
 
+/**
+ * Region matching for Catalog SKUs: exact, 'global', and optional 'us' super‑region.
+ */
 function regionMatches(serviceRegions, region) {
   const want = String(region || "").toLowerCase();
   const set  = new Set((serviceRegions || []).map(r => String(r).toLowerCase()));
@@ -93,6 +105,10 @@ function regionMatches(serviceRegions, region) {
   return false;
 }
 
+/**
+ * Identify real per‑instance SKUs and exclude unit SKUs (Core/Ram)
+ * and Sole‑Tenancy surcharges.
+ */
 function isPerInstanceSku(sku, machineType) {
   const name = String(sku?.displayName || "");
   if (!machineType) return false;
@@ -103,7 +119,7 @@ function isPerInstanceSku(sku, machineType) {
 }
 
 /* ---------------------------
- * Category → family allow-list (for recommendations)
+ * Category → GCP family allow‑list (for recommendations)
  * --------------------------- */
 const gcpFamilyAllowList = {
   general: [ "t2d", "n2d", "e2", "n2", "n4" ],
@@ -115,19 +131,26 @@ function getGcpAllowedPrefixes(category) {
 }
 
 /* ---------------------------
- * FULL-mode helpers (Compute API via OIDC)
+ * FULL‑mode helpers (Compute API via OIDC)
+ * No SDKs — read short‑lived token from env (GCLOUD_ACCESS_TOKEN)
  * --------------------------- */
 
-// Get short-lived access token from OIDC (google-github-actions/auth)
+/**
+ * Get short‑lived access token issued by the OIDC workflow step.
+ * Ensure your workflow exports it as GCLOUD_ACCESS_TOKEN.
+ */
 async function getAccessTokenFromADC() {
-  const { GoogleAuth } = await import("google-auth-library");
-  const auth = new GoogleAuth({
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"]
-  });
-  const client = await auth.getClient();
-  const token  = await client.getAccessToken();
-  if (!token || !token.token) throw new Error("[GCP] OAuth token not available from ADC");
-  return token.token;
+  const token =
+    process.env.GCLOUD_ACCESS_TOKEN ||
+    process.env.GOOGLE_OAUTH_ACCESS_TOKEN || // optional fallback
+    "";
+  if (!token) {
+    throw new Error(
+      "[GCP] No access token found in env. " +
+      "Ensure your workflow passes steps.auth.outputs.access_token to GCLOUD_ACCESS_TOKEN."
+    );
+  }
+  return token;
 }
 
 // List project zones, filtered to the chosen region prefix (e.g., "us-east1-")
@@ -168,7 +191,7 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
     for (const mt of j.items || []) {
       const name = String(mt.name || "");
       if (/^custom-/.test(name)) continue;
-      if (!/^[a-z0-9]+-[a-z]+[a-z0-9]*-\d+$/i.test(name)) continue; // predefined shape
+      if (!/^[a-z0-9]+-[a-z]+[a-z0-9]*-\d+$/i.test(name)) continue; // predefined shapes only
       mts.push({ name, guestCpus: mt.guestCpus, memoryMb: mt.memoryMb });
     }
     if (!j.nextPageToken) break;
@@ -179,8 +202,7 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
 
 /**
  * Parse Catalog SKUs into a { series: { core: rate, ram: rate } } map for Linux.
- * This reads "N2 Instance Core running..." and "N2 Instance Ram running..." SKUs.
- * We also filter to region/global and OnDemand.
+ * Reads "N2 Instance Core running..." and "N2 Instance Ram running..." SKUs.
  */
 function parseSeriesUnitRate(sku) {
   const name = (sku.displayName || "").toLowerCase();
