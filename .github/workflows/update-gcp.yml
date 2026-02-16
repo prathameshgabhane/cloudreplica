@@ -124,3 +124,6 @@ jobs:
 
           # >>> Pass the OIDC access token to the script (for fallback & optional OAuth to Catalog)
           GCLOUD_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+
+          # >>> One-time: force composition fallback so you get data even if per-instance SKUs are sparse
+          GCP_FORCE_COMPOSE: "1"
