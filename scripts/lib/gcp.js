@@ -106,16 +106,21 @@ function regionMatches(serviceRegions, region) {
 }
 
 /**
- * Identify real per‑instance SKUs and exclude unit SKUs (Core/Ram)
+ * Identify real per‑instance SKUs and exclude unit SKUs (Core/vCPU/Ram/Memory)
  * and Sole‑Tenancy surcharges.
+ * Accept both "Instance" and "VM" (newer SKUs often use "VM" and omit "running").
  */
 function isPerInstanceSku(sku, machineType) {
   const name = String(sku?.displayName || "");
   if (!machineType) return false;
-  if (/\b(Core|Ram|Sole\s*Tenancy|Sole\s*Tenant)\b/i.test(name)) return false;
-  const hasInstanceVerb = /\bInstance\b|\brunning\b/i.test(name);
+
+  // Exclude unit SKUs and sole-tenant surcharges
+  if (/\b(Core|vCPU|Ram|Memory|Sole\s*Tenancy|Sole\s*Tenant)\b/i.test(name)) return false;
+
+  // Accept "Instance" or "VM" (no need to require the verb "running")
+  const hasInstanceNoun = /\b(Instance|VM)\b/i.test(name);
   const includesType    = name.toLowerCase().includes(String(machineType).toLowerCase());
-  return hasInstanceVerb && includesType;
+  return hasInstanceNoun && includesType;
 }
 
 /* ---------------------------
@@ -201,18 +206,26 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
 }
 
 /**
- * Parse Catalog SKUs into a { series: { core: rate, ram: rate } } map for Linux.
- * Reads "N2 Instance Core running..." and "N2 Instance Ram running..." SKUs.
+ * Parse Catalog SKUs into a { series: { core, ram } } map for Linux.
+ * Accept both "Instance" and "VM", and "core/vCPU" + "ram/memory" wording.
  */
 function parseSeriesUnitRate(sku) {
   const name = (sku.displayName || "").toLowerCase();
-  if (/windows|license/i.test(name)) return null;
-  const m = name.match(/\b(n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\binstance\s+(core|ram)\b/i);
+  // Exclude Windows license-like SKUs
+  if (/windows.*license|license.*windows/i.test(name)) return null;
+
+  const m = name.match(
+    /\b(n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(instance|vm)\b.*\b(core|vcpu|ram|memory)\b/i
+  );
   if (!m) return null;
+
   const series = m[1].toLowerCase();
-  const kind   = m[2].toLowerCase();
-  const price  = extractHourlyPrice(sku.pricingInfo);
+  const kindRaw = m[3].toLowerCase();
+  const kind = /ram|memory/.test(kindRaw) ? "ram" : "core";
+
+  const price = extractHourlyPrice(sku.pricingInfo);
   if (!(price > 0)) return null;
+
   return { series, kind, price };
 }
 
@@ -223,8 +236,10 @@ function buildSeriesUnitRateMaps(allSkus, region) {
     if (cat.resourceFamily !== "Compute") continue;
     if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
     if (!regionMatches(sku.serviceRegions, region)) continue;
+
     const info = parseSeriesUnitRate(sku);
     if (!info) continue;
+
     if (!maps[info.series]) maps[info.series] = {};
     maps[info.series][info.kind] = info.price;
   }
