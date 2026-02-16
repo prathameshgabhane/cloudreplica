@@ -31,6 +31,7 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
           token_format: access_token
+          # The action also exports GOOGLE_APPLICATION_CREDENTIALS and related envs.
 
       - name: Show config (debug)
         run: |
@@ -42,7 +43,7 @@ jobs:
           GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
 
-      # >>> NEW: Hard pre-flight checks + live Compute API probe
+      # >>> Hard pre-flight checks + live Compute API probe
       - name: Pre-flight checks (Catalog + Fallback)
         shell: bash
         env:
@@ -92,14 +93,34 @@ jobs:
           # Ensure output dir exists so the write never fails on missing path
           mkdir -p data/gcp
 
+      # (Optional) Quick peek at what Catalog returns using the same OIDC token.
+      - name: Probe Catalog API (OAuth, first 10)
+        shell: bash
+        env:
+          OIDC_TOKEN: ${{ steps.auth.outputs.access_token }}
+          CE_SERVICE_ID: "6F81-5844-456A"
+          GCP_CURRENCY: "USD"
+        run: |
+          set -euo pipefail
+          URL="https://cloudbilling.googleapis.com/v1/services/${CE_SERVICE_ID}/skus?currencyCode=${GCP_CURRENCY}&pageSize=10"
+          CODE=$(curl -s -o /tmp/skus.json -w "%{http_code}" -H "Authorization: Bearer ${OIDC_TOKEN}" "$URL")
+          echo "Catalog probe HTTP: ${CODE}"
+          if [[ "${CODE}" != "200" ]]; then
+            echo "::error::Catalog OAuth probe failed (HTTP ${CODE})."
+            cat /tmp/skus.json || true
+            exit 1
+          fi
+          echo "Top 10 displayNames from Catalog:"
+          jq -r '.skus[0:10][]?.displayName' /tmp/skus.json || true
+
       - name: Fetch GCP prices (FULL mode)
         run: node scripts/providers/gcp.fetch.js
         env:
-          # Public Catalog (free)
+          # Public Catalog (free) - still passed; code may prefer OAuth if present
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
           GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
-          # <<< NEW: pass the OIDC access token to the script >>>
+          # >>> Pass the OIDC access token to the script (for fallback & optional OAuth to Catalog)
           GCLOUD_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
