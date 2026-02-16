@@ -39,7 +39,7 @@ jobs:
           echo "Currency:$GCP_CURRENCY"
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: "us-east1"          # (REGION)
+          GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
 
       # >>> NEW: Hard pre-flight checks + live Compute API probe
@@ -48,7 +48,7 @@ jobs:
         env:
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: "us-east1"          # (REGION)
+          GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
           OIDC_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
@@ -97,7 +97,7 @@ jobs:
         env:
           # Public Catalog (free)
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
-          GCP_REGION: "us-east1"          # (REGION)
+          GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
