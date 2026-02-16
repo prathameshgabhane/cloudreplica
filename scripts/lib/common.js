@@ -2,6 +2,9 @@
 const fs = require("fs");
 const path = require("path");
 
+/**
+ * Atomically write JSON to disk (tmp → rename).
+ */
 function atomicWrite(filePath, dataObj) {
   const dir = path.dirname(filePath);
   const tmp = path.join(dir, path.basename(filePath).replace(/\.json$/, ".tmp.json"));
@@ -10,14 +13,23 @@ function atomicWrite(filePath, dataObj) {
   fs.renameSync(tmp, filePath);
 }
 
+/**
+ * Safe JSON.parse with fallback.
+ */
 function safeJSON(str, fallback = {}) {
   try { return JSON.parse(String(str)); } catch { return fallback; }
 }
 
+/**
+ * Unique + sorted numeric array.
+ */
 function uniqSortedNums(arr) {
   return [...new Set(arr.filter(Number.isFinite))].sort((a, b) => a - b);
 }
 
+/**
+ * Keep the cheapest row per key.
+ */
 function dedupeCheapestByKey(list, keyFn) {
   const map = new Map();
   for (const row of list) {
@@ -29,6 +41,9 @@ function dedupeCheapestByKey(list, keyFn) {
   return [...map.values()];
 }
 
+/**
+ * Guard: skip write if provider list is empty.
+ */
 function warnAndSkipWriteOnEmpty(provider, list) {
   if (!Array.isArray(list) || list.length === 0) {
     console.warn(`⚠️ FAILOVER: ${provider} list is empty. Skipping write to keep last-known-good file.`);
@@ -40,7 +55,6 @@ function warnAndSkipWriteOnEmpty(provider, list) {
 function logStart(name) {
   console.log(`▶ ${name} ...`);
 }
-
 function logDone(name) {
   console.log(`✅ ${name} done`);
 }
