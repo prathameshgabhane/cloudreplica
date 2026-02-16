@@ -48,7 +48,7 @@ async function listSkus(serviceId, pageToken = "") {
   const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
   const finalUrl = bearer ? url : `${url}&key=${API_KEY}`;
 
-  // Small trace so we can see which path we used
+  // Trace which auth path we used for visibility
   console.log(`[GCP] Catalog auth: ${bearer ? "OAuth(Bearer)" : "API key"}`);
 
   const r = await fetch(finalUrl, { headers });
@@ -104,7 +104,8 @@ async function fetchGcpPrices() {
     const fam = classifyGcpInstance(instTok);
     if (!fam) continue;
 
-    const os    = /windows/i.test(sku.displayName || "") ? "Windows" : "Linux";
+    const readable = (sku.description || sku.displayName || "");
+    const os    = /windows/i.test(readable) ? "Windows" : "Linux";
     const price = extractHourlyPrice(sku.pricingInfo);
     if (!(price > 0)) continue;
 
@@ -187,7 +188,7 @@ async function fetchGcpPrices() {
     const sample = allSkus
       .filter(s => (s.category?.resourceFamily === "Compute") && regionMatches(s.serviceRegions, REGION))
       .slice(0, 15)
-      .map(s => s.displayName);
+      .map(s => s.description || s.displayName || null);
     console.warn(
       `[GCP] DEBUG: 0 rows after per-instance and composition in '${REGION}'. ` +
       `Sample:\n${JSON.stringify(sample, null, 2)}`
