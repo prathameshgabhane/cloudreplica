@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 // FIXED CORRECT PATHS – two levels up from scripts/aggregate/
-const AWS_FILE   = path.join(__dirname, "..", "..", "data", "aws", "aws.prices.json");
-const AZURE_FILE = path.join(__dirname, "..", "..", "data", "azure", "azure.prices.json");
-const GCP_FILE   = path.join(__dirname, "..", "..", "data", "gcp", "gcp.prices.json");
+const AWS_FILE  = path.join(__dirname, "..", "..", "data", "aws",   "aws.prices.json");
+const AZURE_FILE= path.join(__dirname, "..", "..", "data", "azure", "azure.prices.json");
+const GCP_FILE  = path.join(__dirname, "..", "..", "data", "gcp",   "gcp.prices.json");
 
 // Output file
 const OUTPUT_FILE = path.join(__dirname, "..", "..", "data", "prices.json");
@@ -24,20 +24,23 @@ function loadJSON(f) {
   }
 }
 
+function uniqSortedNums(arr) {
+  return [...new Set((arr || []).filter(n => Number.isFinite(n)))].sort((a, b) => a - b);
+}
+
 // Merge meta fields (os, vcpu, ram)
-function mergeMeta(a, b) {
-  return {
-    os: Array.from(new Set([...(a.os || []), ...(b.os || [])])),
-    vcpu: Array.from(new Set([...(a.vcpu || []), ...(b.vcpu || [])])).sort((x, y) => x - y),
-    ram:  Array.from(new Set([...(a.ram  || []), ...(b.ram  || [])])).sort((x, y) => x - y)
-  };
+function mergeMeta(a = {}, b = {}) {
+  const os   = [...new Set([...(a.os || []), ...(b.os || [])])];
+  const vcpu = uniqSortedNums([...(a.vcpu || []), ...(b.vcpu || [])]);
+  const ram  = uniqSortedNums([...(a.ram  || []), ...(b.ram  || [])]);
+  return { os, vcpu, ram };
 }
 
 // MAIN
 function main() {
   const aws   = loadJSON(AWS_FILE);
   const azure = loadJSON(AZURE_FILE);
-  const gcp   = loadJSON(GCP_FILE); // NEW (optional)
+  const gcp   = loadJSON(GCP_FILE); // optional
 
   if (!aws || !azure) {
     console.error("❌ AWS or Azure files missing — aggregator cannot run");
@@ -58,7 +61,7 @@ function main() {
     meta,
     aws:   aws.compute   || [],
     azure: azure.compute || [],
-    gcp:   gcp?.compute  || [],   // NEW
+    gcp:   (gcp && gcp.compute) || [],
     generatedAt: new Date().toISOString()
   };
 
