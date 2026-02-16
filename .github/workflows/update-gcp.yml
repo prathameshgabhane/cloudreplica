@@ -2,6 +2,7 @@ name: Fetch GCP Prices
 
 permissions:
   contents: write
+  id-token: write   # required for OIDC → short-lived Google token
 
 on:
   workflow_call: {}
@@ -21,9 +22,33 @@ jobs:
         with:
           node-version: '20'
 
+      # --- OIDC: authenticate to Google Cloud (NO key file needed) ---
+      - name: Google OIDC Auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          token_format: access_token
+
+      # (Optional) print which project & region we're about to use
+      - name: Show config (debug)
+        run: |
+          echo "Project: $GCP_PROJECT_ID"
+          echo "Region:  $GCP_REGION"
+          echo "Currency:$GCP_CURRENCY"
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: "us-east1"
+          GCP_CURRENCY: "USD"
+
+      # --- Run the full-mode fetcher (Catalog + composition fallback) ---
       - name: Fetch GCP prices
         run: node scripts/providers/gcp.fetch.js
         env:
           GCP_REGION: "us-east1"
           GCP_CURRENCY: "USD"
+          # Catalog API (public SKUs & prices; free to call)
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
+          # Compute Engine metadata (machineTypes.list; uses OIDC token above)
+          GCP_PROJECT_ID:   ${{ secrets.GCP_PROJECT_ID }}
