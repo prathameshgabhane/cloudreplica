@@ -48,13 +48,14 @@ function extractHourlyPrice(pricingInfo) {
 }
 
 /**
- * Infer machine type token (e.g., "n2-standard-4") from attributes or displayName.
+ * Infer machine type token (e.g., "n2-standard-4") from attributes or description.
  */
 function inferMachineType(sku) {
   const attrs = sku?.attributes || {};
   if (attrs.machineType) return String(attrs.machineType).toLowerCase();
 
-  const s = String(sku?.displayName || "").toLowerCase();
+  // NOTE: prefer 'description', fall back to 'displayName'
+  const s = String(sku?.description || sku?.displayName || "").toLowerCase();
   const m = s.match(
     /\b([a-z0-9]+-(?:standard|highmem|highcpu|ultramem|megamem|c2d|c3|c4|c3d|c4d|c4a|n1|n2|n2d|n4|t2a|t2d|e2)-\d+)\b/
   );
@@ -111,7 +112,7 @@ function regionMatches(serviceRegions, region) {
  * Accept both "Instance" and "VM" (newer SKUs often use "VM" and omit "running").
  */
 function isPerInstanceSku(sku, machineType) {
-  const name = String(sku?.displayName || "");
+  const name = String(sku?.description || sku?.displayName || "");
   if (!machineType) return false;
 
   // Exclude unit SKUs and sole-tenant surcharges
@@ -210,7 +211,7 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
  * Accept both "Instance" and "VM", and "core/vCPU" + "ram/memory" wording.
  */
 function parseSeriesUnitRate(sku) {
-  const name = (sku.displayName || "").toLowerCase();
+  const name = (sku.description || sku.displayName || "").toLowerCase();
   // Exclude Windows license-like SKUs
   if (/windows.*license|license.*windows/i.test(name)) return null;
 
