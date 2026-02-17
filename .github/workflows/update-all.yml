@@ -19,7 +19,7 @@ jobs:
     uses: ./.github/workflows/update-azure.yml
     permissions:
       contents: read
-      id-token: write
+      id-token: write       # OIDC for azure/login
     secrets: inherit
 
   # 2) AWS
@@ -36,15 +36,16 @@ jobs:
     uses: ./.github/workflows/update-gcp.yml
     permissions:
       contents: read
-      id-token: write
+      id-token: write       # OIDC for google-github-actions/auth
     secrets: inherit
 
-  # 4) Aggregate
+  # 4) Aggregate (flat merge -> docs/data/prices.json for UI)
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -58,6 +59,7 @@ jobs:
             sudo apt-get install -y jq
           fi
 
+      # Download artifacts from THIS workflow run
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
@@ -78,12 +80,9 @@ jobs:
 
       - name: List downloaded artifacts
         run: |
-          echo "== AZURE ARTIFACT =="
-          find _artifacts/azure -maxdepth 6 -type f -print || true
-          echo "== AWS ARTIFACT =="
-          find _artifacts/aws   -maxdepth 6 -type f -print || true
-          echo "== GCP ARTIFACT =="
-          find _artifacts/gcp   -maxdepth 6 -type f -print || true
+          echo "== AZURE ARTIFACT ==" && find _artifacts/azure -maxdepth 6 -type f -print || true
+          echo "== AWS ARTIFACT =="   && find _artifacts/aws   -maxdepth 6 -type f -print || true
+          echo "== GCP ARTIFACT =="   && find _artifacts/gcp   -maxdepth 6 -type f -print || true
 
       - name: Validate provider JSONs are present and non-empty
         shell: bash
@@ -125,17 +124,33 @@ jobs:
           cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
           cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
 
-      - name: Merge into data/prices.json
+      # ---------- FLAT MERGE → data/prices.json then docs/data/prices.json ----------
+      - name: Merge into data/prices.json (FLAT for UI)
         shell: bash
         run: |
           set -euo pipefail
           jq -n \
             --slurpfile az data/azure/azure.prices.json \
             --slurpfile aw data/aws/aws.prices.json \
-            --slurpfile gc data/gcp/gcp.prices.json \
-            '{azure: $az[0], aws: $aw[0], gcp: $gc[0]}' \
-            > data/prices.json
+            --slurpfile gc data/gcp/gcp.prices.json '
+            {
+              meta: {
+                os:   (($az[0].meta.os + $aw[0].meta.os + $gc[0].meta.os) | unique),
+                vcpu: (($az[0].meta.vcpu + $aw[0].meta.vcpu + $gc[0].meta.vcpu) | unique | sort),
+                ram:  (($az[0].meta.ram  + $aw[0].meta.ram  + $gc[0].meta.ram ) | unique | sort)
+              },
+              azure: $az[0].compute,
+              aws:   $aw[0].compute,
+              gcp:   $gc[0].compute,
+              generatedAt: (now | todate)
+            }' > data/prices.json
+
           cp -f data/prices.json docs/data/prices.json
+
+      - name: Show merged keys and counts
+        run: |
+          echo "Top-level keys of data/prices.json:" && jq 'keys' data/prices.json | sed 's/^/  /'
+          echo "Counts: [azure, aws, gcp]" && jq '[.azure|length, .aws|length, .gcp|length]' data/prices.json
 
       - name: Check if files are ignored by .gitignore
         run: |
@@ -159,7 +174,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Force-add to bypass potential .gitignore rules (then you can fix .gitignore permanently)
+      # Clean push: align to origin/main BEFORE staging to avoid rebase noise
       - name: Commit final merged cloud prices (force add)
         if: steps.git_status.outputs.changed == 'true'
         env:
@@ -168,6 +183,10 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
           git add -f \
             data/azure/azure.prices.json \
@@ -183,9 +202,6 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-
-          CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-          git pull --rebase origin "$CURRENT_BRANCH" || true
 
           git commit -m "Auto-update ALL cloud prices"
           git push
