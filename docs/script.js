@@ -10,16 +10,22 @@ import {
   getGcpStorageMonthlyFromCfg
 } from "./ui/utils.js";
 
-// ⬇️ CHANGED: only import STORAGE_CFG (we no longer use loadPricesAndMeta/API_BASE/FALLBACK_META)
+// Only import STORAGE_CFG (we no longer use loadPricesAndMeta/API_BASE/FALLBACK_META)
 import { STORAGE_CFG } from "./ui/state.js";
 
 import { initStorageTypeTooltip, initOsTypeTooltip } from "./ui/tooltips.js";
 import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
 
 /* ============================================================
-   Single-source loader: docs/data/prices.json (FLAT structure)
+   Single-source loader: docs/data/prices.json
    - Adds cache-buster to avoid GH Pages CDN caching old JSON
-   - Guards shape and always returns { meta, azure:[], aws:[], gcp:[] }
+   - Accepts BOTH shapes and always returns { meta, azure:[], aws:[], gcp:[], generatedAt? }
+
+   FLAT (preferred):
+     { meta:{...}, azure:[...], aws:[...], gcp:[...], generatedAt? }
+
+   WRAPPED (your current live file):
+     { azure:{meta:{...}, compute:[...]}, aws:{meta:{...}, compute:[...]}, gcp:{meta:{...}, compute:[...] }, generatedAt? }
 ============================================================ */
 async function loadPricesFlat() {
   const url = `./data/prices.json?v=${Date.now()}`; // relative path + cache-buster
@@ -27,13 +33,35 @@ async function loadPricesFlat() {
   if (!res.ok) throw new Error(`Unable to fetch prices.json (${res.status})`);
   const j = await res.json();
 
-  // Expect FLAT: { meta, azure:[], aws:[], gcp:[] }
-  const azure = Array.isArray(j.azure) ? j.azure : [];
-  const aws   = Array.isArray(j.aws)   ? j.aws   : [];
-  const gcp   = Array.isArray(j.gcp)   ? j.gcp   : [];
-  const meta  = j.meta || {};
+  // If FLAT (preferred)
+  if (Array.isArray(j.azure) && Array.isArray(j.aws) && Array.isArray(j.gcp)) {
+    return {
+      meta: j.meta || {},
+      azure: j.azure,
+      aws:   j.aws,
+      gcp:   j.gcp,
+      generatedAt: j.generatedAt
+    };
+  }
 
-  return { meta, azure, aws, gcp, generatedAt: j.generatedAt };
+  // If WRAPPED (current live file)
+  const looksWrapped =
+    j && typeof j === "object" &&
+    j.azure && j.aws && j.gcp &&
+    !Array.isArray(j.azure) && !Array.isArray(j.aws) && !Array.isArray(j.gcp);
+
+  if (looksWrapped) {
+    return {
+      meta: j.meta || j.azure?.meta || j.aws?.meta || j.gcp?.meta || {},
+      azure: Array.isArray(j.azure?.compute) ? j.azure.compute : [],
+      aws:   Array.isArray(j.aws?.compute)   ? j.aws.compute   : [],
+      gcp:   Array.isArray(j.gcp?.compute)   ? j.gcp.compute   : [],
+      generatedAt: j.generatedAt
+    };
+  }
+
+  // Unknown shape → fail clearly
+  throw new Error("prices.json has an unexpected shape");
 }
 
 /* ============================================================
@@ -132,7 +160,7 @@ export async function compare(resetFamilies = false) {
 
   try {
     resetCards();
-    // ⬇️ CHANGED: use the flat, single-source loader
+    // Use the shape-tolerant loader
     const data = await loadPricesFlat();
 
     /* ---------- AWS ---------- */
