@@ -45,7 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -59,7 +58,6 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      # --- Download artifacts from the SAME run (reusable workflows) ---
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
@@ -78,55 +76,40 @@ jobs:
           name: gcp-prices
           path: _artifacts/gcp
 
-      # --- Sanity-print what's inside artifacts ---
       - name: List downloaded artifacts
         run: |
           echo "== AZURE ARTIFACT =="
-          find _artifacts/azure -maxdepth 4 -type f -print || true
+          find _artifacts/azure -maxdepth 6 -type f -print || true
           echo "== AWS ARTIFACT =="
-          find _artifacts/aws   -maxdepth 4 -type f -print || true
+          find _artifacts/aws   -maxdepth 6 -type f -print || true
           echo "== GCP ARTIFACT =="
-          find _artifacts/gcp   -maxdepth 4 -type f -print || true
+          find _artifacts/gcp   -maxdepth 6 -type f -print || true
 
-      # --- Validate presence & non-empty JSONs BEFORE staging ---
       - name: Validate provider JSONs are present and non-empty
         shell: bash
         run: |
           set -euo pipefail
-
-          AZ_SRC=$(find _artifacts/azure -name '*.json' -type f | head -n1 || true)
-          AW_SRC=$(find _artifacts/aws   -name '*.json' -type f | head -n1 || true)
-          GC_SRC=$(find _artifacts/gcp   -name '*.json' -type f | head -n1 || true)
+          AZ_SRC=$(find _artifacts/azure -type f -name '*.json' -print -quit || true)
+          AW_SRC=$(find _artifacts/aws   -type f -name '*.json' -print -quit || true)
+          GC_SRC=$(find _artifacts/gcp   -type f -name '*.json' -print -quit || true)
 
           echo "AZ_SRC=${AZ_SRC}"
           echo "AW_SRC=${AW_SRC}"
           echo "GC_SRC=${GC_SRC}"
 
-          # Fail fast if any provider artifact is missing
-          [[ -n "${AZ_SRC}" ]] || { echo "::error::Azure artifact missing (azure-prices)"; exit 1; }
-          [[ -n "${AW_SRC}" ]] || { echo "::error::AWS artifact missing (aws-prices)"; exit 1; }
-          [[ -n "${GC_SRC}" ]] || { echo "::error::GCP artifact missing (gcp-prices)"; exit 1; }
+          [[ -n "${AZ_SRC}" && -s "${AZ_SRC}" ]] || { echo "::error::Azure artifact JSON missing/empty"; exit 1; }
+          [[ -n "${AW_SRC}" && -s "${AW_SRC}" ]] || { echo "::error::AWS artifact JSON missing/empty"; exit 1; }
+          [[ -n "${GC_SRC}" && -s "${GC_SRC}" ]] || { echo "::error::GCP artifact JSON missing/empty"; exit 1; }
 
-          # Fail fast if any file is empty
-          [[ -s "${AZ_SRC}" ]] || { echo "::error::Azure JSON is empty: ${AZ_SRC}"; exit 1; }
-          [[ -s "${AW_SRC}" ]] || { echo "::error::AWS JSON is empty: ${AW_SRC}"; exit 1; }
-          [[ -s "${GC_SRC}" ]] || { echo "::error::GCP JSON is empty: ${GC_SRC}"; exit 1; }
-
-          # Quick peek at top-level keys
           echo "== JSON KEYS PREVIEW =="
-          echo "Azure:"
-          jq 'keys' "${AZ_SRC}" | head -n 50 || true
-          echo "AWS:"
-          jq 'keys' "${AW_SRC}" | head -n 50 || true
-          echo "GCP:"
-          jq 'keys' "${GC_SRC}" | head -n 50 || true
+          echo "Azure:" && jq 'keys' "${AZ_SRC}" | head -n 50 || true
+          echo "AWS:"   && jq 'keys' "${AW_SRC}" | head -n 50 || true
+          echo "GCP:"   && jq 'keys' "${GC_SRC}" | head -n 50 || true
 
-          # Export for later steps
           echo "AZ_SRC=${AZ_SRC}" >> "$GITHUB_ENV"
           echo "AW_SRC=${AW_SRC}" >> "$GITHUB_ENV"
           echo "GC_SRC=${GC_SRC}" >> "$GITHUB_ENV"
 
-      # --- Stage files into repo layout only after validation ---
       - name: Stage provider files into repo layout
         shell: bash
         run: |
@@ -142,30 +125,30 @@ jobs:
           cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
           cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
 
-      # --- Merge into data/prices.json, then copy to docs ---
       - name: Merge into data/prices.json
         shell: bash
         run: |
           set -euo pipefail
-
-          # Assert again to be safe
-          test -s data/azure/azure.prices.json
-          test -s data/aws/aws.prices.json
-          test -s data/gcp/gcp.prices.json
-
           jq -n \
             --slurpfile az data/azure/azure.prices.json \
             --slurpfile aw data/aws/aws.prices.json \
             --slurpfile gc data/gcp/gcp.prices.json \
             '{azure: $az[0], aws: $aw[0], gcp: $gc[0]}' \
             > data/prices.json
-
           cp -f data/prices.json docs/data/prices.json
 
-      - name: Show merged keys
+      - name: Check if files are ignored by .gitignore
         run: |
-          echo "Top-level keys of data/prices.json:"
-          jq 'keys' data/prices.json | sed 's/^/  /'
+          echo "git check-ignore:"
+          git check-ignore -v \
+            data/azure/azure.prices.json \
+            data/aws/aws.prices.json \
+            data/gcp/gcp.prices.json \
+            data/prices.json \
+            docs/data/azure/azure.prices.json \
+            docs/data/aws/aws.prices.json \
+            docs/data/gcp/gcp.prices.json \
+            docs/data/prices.json || true
 
       - name: Detect changes
         id: git_status
@@ -176,17 +159,33 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit final merged cloud prices
+      # Force-add to bypass potential .gitignore rules (then you can fix .gitignore permanently)
+      - name: Commit final merged cloud prices (force add)
         if: steps.git_status.outputs.changed == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "Auto-update ALL cloud prices"
-          file_pattern: |
-            data/aws/aws.prices.json
-            data/azure/azure.prices.json
-            data/gcp/gcp.prices.json
-            data/prices.json
+        env:
+          TZ: UTC
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f \
+            data/azure/azure.prices.json \
+            data/aws/aws.prices.json \
+            data/gcp/gcp.prices.json \
+            data/prices.json \
+            docs/data/azure/azure.prices.json \
+            docs/data/aws/aws.prices.json \
+            docs/data/gcp/gcp.prices.json \
             docs/data/prices.json
-            docs/data/aws/aws.prices.json
-            docs/data/azure/azure.prices.json
-            docs/data/gcp/gcp.prices.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          git pull --rebase origin "$CURRENT_BRANCH" || true
+
+          git commit -m "Auto-update ALL cloud prices"
+          git push
