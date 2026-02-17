@@ -1,34 +1,58 @@
-// scripts/aggregate/build-prices.js
+/* scripts/aggregate/build-prices.js
+ * Merge provider JSONs (AWS/Azure/GCP) into a FLAT prices.json:
+ *   { meta, azure:[], aws:[], gcp:[], generatedAt }
+ *
+ * Usage (local):
+ *   node scripts/aggregate/build-prices.js
+ *   node scripts/aggregate/build-prices.js --out docs/data/prices.json
+ */
+
 const fs = require("fs");
 const path = require("path");
 
-// FIXED CORRECT PATHS – two levels up from scripts/aggregate/
-const AWS_FILE  = path.join(__dirname, "..", "..", "data", "aws",   "aws.prices.json");
-const AZURE_FILE= path.join(__dirname, "..", "..", "data", "azure", "azure.prices.json");
-const GCP_FILE  = path.join(__dirname, "..", "..", "data", "gcp",   "gcp.prices.json");
+// ---------- Paths ----------
+const BASE = path.resolve(__dirname, "..", "..");
+const AWS_FILE    = path.join(BASE, "data", "aws",   "aws.prices.json");
+const AZURE_FILE  = path.join(BASE, "data", "azure", "azure.prices.json");
+const GCP_FILE    = path.join(BASE, "data", "gcp",   "gcp.prices.json");
 
-// Output file
-const OUTPUT_FILE = path.join(__dirname, "..", "..", "data", "prices.json");
+// --out <file> (optional) → defaults to data/prices.json
+const ARG_OUT_IDX = process.argv.indexOf("--out");
+const OUTPUT_FILE = ARG_OUT_IDX > -1 && process.argv[ARG_OUT_IDX + 1]
+  ? path.resolve(process.argv[ARG_OUT_IDX + 1])
+  : path.join(BASE, "data", "prices.json");
 
-// Load JSON safely
-function loadJSON(f) {
-  if (!fs.existsSync(f)) {
-    console.warn(`⚠ Missing file: ${f}`);
+// ---------- Helpers ----------
+function bytesOf(str) {
+  return Buffer.byteLength(String(str ?? ""), "utf8");
+}
+
+function loadJSON(filePath, { required = true } = {}) {
+  const pretty = path.relative(BASE, filePath);
+  if (!fs.existsSync(filePath)) {
+    const msg = `⚠ Missing file: ${pretty}`;
+    if (required) console.error(msg); else console.warn(msg);
     return null;
   }
   try {
-    return JSON.parse(fs.readFileSync(f, "utf8"));
+    const raw = fs.readFileSync(filePath, "utf8");
+    const obj = JSON.parse(raw);
+    console.log(`↳ Loaded ${pretty} (${bytesOf(raw)} bytes)`);
+    return obj;
   } catch (err) {
-    console.error(`❌ JSON parse error in ${f}:`, err.message);
+    console.error(`❌ JSON parse error in ${pretty}: ${err.message}`);
     return null;
   }
 }
 
-function uniqSortedNums(arr) {
-  return [...new Set((arr || []).filter(n => Number.isFinite(n)))].sort((a, b) => a - b);
+function isFiniteNum(n) {
+  return Number.isFinite(n);
 }
 
-// Merge meta fields (os, vcpu, ram)
+function uniqSortedNums(arr) {
+  return [...new Set((arr || []).filter(isFiniteNum))].sort((a, b) => a - b);
+}
+
 function mergeMeta(a = {}, b = {}) {
   const os   = [...new Set([...(a.os || []), ...(b.os || [])])];
   const vcpu = uniqSortedNums([...(a.vcpu || []), ...(b.vcpu || [])]);
@@ -36,37 +60,67 @@ function mergeMeta(a = {}, b = {}) {
   return { os, vcpu, ram };
 }
 
-// MAIN
-function main() {
-  const aws   = loadJSON(AWS_FILE);
-  const azure = loadJSON(AZURE_FILE);
-  const gcp   = loadJSON(GCP_FILE); // optional
+function ensureDirFor(filePath) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
 
-  if (!aws || !azure) {
-    console.error("❌ AWS or Azure files missing — aggregator cannot run");
+function asComputeArray(providerObj) {
+  // Provider files your fetchers write: { meta:{...}, compute:[...] }
+  const arr = Array.isArray(providerObj?.compute) ? providerObj.compute : [];
+  return arr;
+}
+
+function summarize(label, obj) {
+  const count = Array.isArray(obj?.compute) ? obj.compute.length : 0;
+  const m = obj?.meta || {};
+  console.log(
+    `• ${label}: compute=${count} meta{` +
+    ` os=${Array.isArray(m.os) ? m.os.length : 0},` +
+    ` vcpu=${Array.isArray(m.vcpu) ? m.vcpu.length : 0},` +
+    ` ram=${Array.isArray(m.ram) ? m.ram.length : 0} }`
+  );
+}
+
+// ---------- Main ----------
+(function main() {
+  console.log("== Aggregate provider files → FLAT prices.json ==");
+
+  const aws   = loadJSON(AWS_FILE,   { required: false });
+  const azure = loadJSON(AZURE_FILE, { required: false });
+  const gcp   = loadJSON(GCP_FILE,   { required: false });
+
+  if (!aws && !azure && !gcp) {
+    console.error("❌ No provider files found; aborting.");
     process.exit(1);
   }
 
-  // Start meta merge with AWS + Azure
-  let meta = mergeMeta(aws.meta, azure.meta);
+  console.log("== Provider summaries ==");
+  summarize("AWS",   aws);
+  summarize("Azure", azure);
+  summarize("GCP",   gcp);
 
-  // If GCP exists, merge its meta too
-  if (gcp && gcp.meta) {
-    meta = mergeMeta(meta, gcp.meta);
-  } else {
-    console.warn("⚠ GCP file missing or invalid — continuing without GCP");
-  }
+  // Merge meta from whichever providers are present
+  let meta = { os: [], vcpu: [], ram: [] };
+  if (aws?.meta)   meta = mergeMeta(meta, aws.meta);
+  if (azure?.meta) meta = mergeMeta(meta, azure.meta);
+  if (gcp?.meta)   meta = mergeMeta(meta, gcp.meta);
 
-  const final = {
+  // Flat arrays
+  const flat = {
     meta,
-    aws:   aws.compute   || [],
-    azure: azure.compute || [],
-    gcp:   (gcp && gcp.compute) || [],
+    aws:   asComputeArray(aws),
+    azure: asComputeArray(azure),
+    gcp:   asComputeArray(gcp),
     generatedAt: new Date().toISOString()
   };
 
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(final, null, 2));
-  console.log("✅ Aggregated → data/prices.json");
-}
+  // Warn if any array is empty (helps catch accidental empties)
+  if (flat.aws.length === 0)   console.warn("⚠ AWS compute array is empty");
+  if (flat.azure.length === 0) console.warn("⚠ Azure compute array is empty");
+  if (flat.gcp.length === 0)   console.warn("⚠ GCP compute array is empty");
 
-main();
+  ensureDirFor(OUTPUT_FILE);
+  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(flat, null, 2), "utf8");
+  console.log(`✅ Aggregated → ${path.relative(BASE, OUTPUT_FILE)}`);
+})();
