@@ -43,7 +43,7 @@ jobs:
             echo "::error::Failed to acquire ARM token via OIDC."
             exit 1
           fi
-          echo "ARM_TOKEN=${ARM_TOKEN}" >> $GITHUB_ENV
+          echo "ARM_TOKEN=${ARM_TOKEN}" >> "$GITHUB_ENV"
 
       # --- Optional: quick probe that the token works against ARM ---
       - name: Probe ARM (locations list)
@@ -95,4 +95,3 @@ jobs:
           path: data/azure/azure.prices.json
           if-no-files-found: error
           retention-days: 7
-``
