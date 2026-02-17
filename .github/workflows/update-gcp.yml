@@ -1,12 +1,16 @@
 name: Fetch GCP Prices
 
 permissions:
-  contents: write
-  id-token: write   # required for OIDC
+  contents: read            # provider does not commit; orchestrator will
+  id-token: write           # required for OIDC
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
+
+concurrency:
+  group: provider-gcp
+  cancel-in-progress: true
 
 jobs:
   fetch-gcp:
@@ -16,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node (LTS)
         uses: actions/setup-node@v4
@@ -58,12 +64,12 @@ jobs:
           echo "Region: ${GCP_REGION}"
           echo "Currency: ${GCP_CURRENCY}"
 
-          # 1) API key check (Catalog path)
+          # 1) API key check (Catalog path) — optional because we prefer OAuth
           if [[ -z "${GCP_PRICE_API_KEY:-}" ]]; then
-            echo "::error::GCP_PRICE_API_KEY is empty (Catalog API will not return data)."
-            exit 1
+            echo "Catalog: API key not set (that's OK; using OAuth/Bearer)."
+          else
+            echo "Catalog: API key is set ✔ (will only be used if OAuth token missing)."
           fi
-          echo "Catalog: API key is set ✔ (value masked)"
 
           # 2) Project ID check (fallback path)
           if [[ -z "${GCP_PROJECT_ID:-}" ]]; then
@@ -106,17 +112,17 @@ jobs:
           CODE=$(curl -s -o /tmp/skus.json -w "%{http_code}" -H "Authorization: Bearer ${OIDC_TOKEN}" "$URL")
           echo "Catalog probe HTTP: ${CODE}"
           if [[ "${CODE}" != "200" ]]; then
-            echo "::error::Catalog OAuth probe failed (HTTP ${CODE})."
+            echo "::warning::Catalog OAuth probe failed (HTTP ${CODE}). Continuing because fetch.js will handle errors."
             cat /tmp/skus.json || true
-            exit 1
+          else
+            echo "Top 10 descriptions from Catalog:"
+            jq -r '.skus[0:10][]?.description' /tmp/skus.json || true
           fi
-          echo "Top 10 displayNames from Catalog:"
-          jq -r '.skus[0:10][]?.displayName' /tmp/skus.json || true
 
       - name: Fetch GCP prices (FULL mode)
         run: node scripts/providers/gcp.fetch.js
         env:
-          # Public Catalog (free) - still passed; code may prefer OAuth if present
+          # Public Catalog (free) - still passed; code prefers OAuth if present
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
           GCP_REGION: "us-central1"          # (REGION)
           GCP_CURRENCY: "USD"
@@ -125,5 +131,21 @@ jobs:
           # >>> Pass the OIDC access token to the script (for fallback & optional OAuth to Catalog)
           GCLOUD_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
 
-          # >>> One-time: force composition fallback so you get data even if per-instance SKUs are sparse
-          GCP_FORCE_COMPOSE: "1"
+          # One-time fallback (keep commented unless needed)
+          # GCP_FORCE_COMPOSE: "1"
+
+      # Validate the output exists for this job (helps spot silent failures)
+      - name: Validate output
+        run: |
+          test -s data/gcp/gcp.prices.json
+          echo "Output size (bytes):"
+          wc -c data/gcp/gcp.prices.json
+
+      # Publish the exact JSON as an artifact for the orchestrator
+      - name: Upload GCP pricing JSON (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-prices
+          path: data/gcp/gcp.prices.json
+          if-no-files-found: error
+          retention-days: 7
