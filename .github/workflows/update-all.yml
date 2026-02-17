@@ -96,9 +96,9 @@ jobs:
           [[ -n "$AW_SRC" && -s "$AW_SRC" ]] || { echo "::error::AWS JSON missing"; exit 1; }
           [[ -n "$GC_SRC" && -s "$GC_SRC" ]] || { echo "::error::GCP JSON missing"; exit 1; }
 
-          echo "Azure:" && jq 'keys' "$AZ_SRC" | head -n 30
-          echo "AWS:"   && jq 'keys' "$AW_SRC" | head -n 30
-          echo "GCP:"   && jq 'keys' "$GC_SRC" | head -n 30
+          echo "Azure:" && jq 'keys' "$AZ_SRC" | head -n 30 || true
+          echo "AWS:"   && jq 'keys' "$AW_SRC" | head -n 30 || true
+          echo "GCP:"   && jq 'keys' "$GC_SRC" | head -n 30 || true
 
           echo "AZ_SRC=$AZ_SRC" >> $GITHUB_ENV
           echo "AW_SRC=$AW_SRC" >> $GITHUB_ENV
@@ -160,6 +160,8 @@ JSON
       - name: Diagnostics (safe)
         shell: bash
         run: |
+          set -euo pipefail
+
           echo "Keys:"
           jq 'keys' docs/data/prices.json || true
 
@@ -169,9 +171,9 @@ JSON
           echo "Counts:"
           jq '
             [
-              (try (.azure|length) catch 0),
-              (try (.aws|length)   catch 0),
-              (try (.gcp|length)   catch 0)
+              (try ((.azure // []) | length) catch 0),
+              (try ((.aws   // []) | length) catch 0),
+              (try ((.gcp   // []) | length) catch 0)
             ]
           ' docs/data/prices.json || true
 
