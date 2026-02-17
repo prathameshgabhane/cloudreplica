@@ -158,13 +158,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > docs/data/buildInfo.json <<'JSON'
-          {
-            "generatedAt": "__STAMP__"
-          }
-JSON
-          # Replace placeholder with UTC timestamp
-          sed -i "s#__STAMP__#$(date -u +%Y-%m-%dT%H:%M:%SZ)#" docs/data/buildInfo.json
+          printf '%s\n' '{' > docs/data/buildInfo.json
+          printf '  "generatedAt": "%s"\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> docs/data/buildInfo.json
+          printf '%s\n' '}' >> docs/data/buildInfo.json
 
       # --- Diagnostics (SAFE: cannot fail) ---
       - name: Diagnostics (safe)
