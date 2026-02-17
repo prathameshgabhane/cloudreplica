@@ -23,6 +23,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ensure jq (for quick validation)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
       # Azure authentication (OIDC)
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -31,7 +43,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Generate ARM (management) token for scripts that call ARM/RateCard/etc.
+      # Generate ARM (management) token for scripts that call ARM/Retail/ResourceSKUs
       - name: Generate ARM Token
         shell: bash
         run: |
@@ -45,7 +57,7 @@ jobs:
           fi
           echo "ARM_TOKEN=${ARM_TOKEN}" >> "$GITHUB_ENV"
 
-      # --- Optional: quick probe that the token works against ARM ---
+      # Optional: probe that the token works against ARM (diagnostic)
       - name: Probe ARM (locations list)
         shell: bash
         env:
@@ -60,19 +72,22 @@ jobs:
           echo "ARM probe HTTP: ${CODE}"
           if [[ "${CODE}" != "200" ]]; then
             echo "::warning::ARM probe failed (HTTP ${CODE}). The fetch script may still succeed if it uses a different API."
+          else
+            echo "Probe OK - sample keys:" && jq 'keys' /tmp/arm.json | head -n 20 || true
           fi
 
+      # Ephemeral workspace path (NOT committed to repo)
       - name: Ensure output directory
         run: mkdir -p data/azure
 
-      # >>> Run your Azure fetcher (adjust envs as your script expects)
+      # >>> Run your Azure fetcher (writes to data/azure/azure.prices.json)
       - name: Fetch Azure prices
         run: node scripts/providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
-          AZURE_REGION: "eastus"          # change if you want a different default
+          AZURE_REGION: "eastus"            # change if you want a different default
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          # Example extra envs your script may support:
+          # Optional envs your script may support:
           # AZURE_CURRENCY: "USD"
           # AZURE_FORCE_COMPOSE: "1"
 
@@ -86,8 +101,10 @@ jobs:
           wc -c data/azure/azure.prices.json
           echo "Top-level keys:"
           jq 'keys' data/azure/azure.prices.json | sed 's/^/  /' || true
+          echo "Compute array length:"
+          jq '.compute | length' data/azure/azure.prices.json || true
 
-      # Upload artifact for orchestrator (Option A)
+      # Upload artifact for orchestrator
       - name: Upload Azure pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
