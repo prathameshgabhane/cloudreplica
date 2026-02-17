@@ -54,9 +54,7 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      # ------------------------------
-      # Download artifacts
-      # ------------------------------
+      # ------------------------------ Download artifacts ------------------------------
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
@@ -77,13 +75,11 @@ jobs:
 
       - name: List downloaded artifacts
         run: |
-          echo "== AZURE ARTIFACT ==" && find _artifacts/azure -type f -maxdepth 6 -print || true
-          echo "== AWS ARTIFACT =="   && find _artifacts/aws   -type f -maxdepth 6 -print || true
-          echo "== GCP ARTIFACT =="   && find _artifacts/gcp   -type f -maxdepth 6 -print || true
+          echo "== AZURE ==" && find _artifacts/azure -type f -maxdepth 6 -print || true
+          echo "== AWS =="   && find _artifacts/aws   -type f -maxdepth 6 -print || true
+          echo "== GCP =="   && find _artifacts/gcp   -type f -maxdepth 6 -print || true
 
-      # ------------------------------
-      # Validate
-      # ------------------------------
+      # ------------------------------ Validate ------------------------------
       - name: Validate provider JSONs
         shell: bash
         run: |
@@ -100,18 +96,16 @@ jobs:
           [[ -n "$AW_SRC" && -s "$AW_SRC" ]] || { echo "::error::AWS JSON missing"; exit 1; }
           [[ -n "$GC_SRC" && -s "$GC_SRC" ]] || { echo "::error::GCP JSON missing"; exit 1; }
 
-          echo "Azure:" && jq 'keys' "$AZ_SRC" | head -n 30 || true
-          echo "AWS:"   && jq 'keys' "$AW_SRC" | head -n 30 || true
-          echo "GCP:"   && jq 'keys' "$GC_SRC" | head -n 30 || true
+          echo "Azure:" && jq 'keys' "$AZ_SRC" | head -n 30
+          echo "AWS:"   && jq 'keys' "$AW_SRC" | head -n 30
+          echo "GCP:"   && jq 'keys' "$GC_SRC" | head -n 30
 
           echo "AZ_SRC=$AZ_SRC" >> $GITHUB_ENV
           echo "AW_SRC=$AW_SRC" >> $GITHUB_ENV
           echo "GC_SRC=$GC_SRC" >> $GITHUB_ENV
 
-      # ------------------------------
-      # Stage into docs/data
-      # ------------------------------
-      - name: Stage provider outputs into docs/data
+      # ------------------------------ Stage into docs/data ------------------------------
+      - name: Stage provider outputs
         shell: bash
         run: |
           mkdir -p docs/data/azure docs/data/aws docs/data/gcp
@@ -119,9 +113,7 @@ jobs:
           cp -f "$AW_SRC" docs/data/aws/aws.prices.json
           cp -f "$GC_SRC" docs/data/gcp/gcp.prices.json
 
-      # ------------------------------
-      # FLAT MERGE
-      # ------------------------------
+      # ------------------------------ FLAT MERGE ------------------------------
       - name: Merge into docs/data/prices.json (FLAT)
         shell: bash
         run: |
@@ -140,9 +132,7 @@ jobs:
               gcp:   $gc[0].compute
             }' > docs/data/prices.json
 
-      # ------------------------------
-      # Enforce FLAT
-      # ------------------------------
+      # ------------------------------ Enforce FLAT ------------------------------
       - name: Enforce FLAT shape
         shell: bash
         run: |
@@ -155,9 +145,7 @@ jobs:
             exit 1
           }
 
-      # ------------------------------
-      # buildInfo.json
-      # ------------------------------
+      # ------------------------------ buildInfo.json ------------------------------
       - name: Write buildInfo.json
         shell: bash
         run: |
@@ -165,12 +153,10 @@ jobs:
           {
             "generatedAt": "__STAMP__"
           }
-          JSON
-          sed -i "s/__STAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" docs/data/buildInfo.json
+JSON
+          sed -i "s#__STAMP__#$(date -u +%Y-%m-%dT%H:%M:%SZ)#" docs/data/buildInfo.json
 
-      # ------------------------------
-      # Diagnostics (SAFE — cannot fail)
-      # ------------------------------
+      # ------------------------------ SAFE DIAGNOSTICS ------------------------------
       - name: Diagnostics (safe)
         shell: bash
         run: |
@@ -189,9 +175,7 @@ jobs:
             ]
           ' docs/data/prices.json || true
 
-      # ------------------------------
-      # Detect changes
-      # ------------------------------
+      # ------------------------------ Detect changes ------------------------------
       - name: Detect changes
         id: git_status
         run: |
@@ -201,9 +185,7 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # ------------------------------
-      # Commit
-      # ------------------------------
+      # ------------------------------ Commit ------------------------------
       - name: Commit merged cloud prices
         if: steps.git_status.outputs.changed == 'true'
         shell: bash
