@@ -147,10 +147,22 @@ jobs:
 
           cp -f data/prices.json docs/data/prices.json
 
-      - name: Show merged keys and counts
+      # SAFER diagnostics: never fail the job here
+      - name: Show merged keys and counts (safe)
+        shell: bash
         run: |
-          echo "Top-level keys of data/prices.json:" && jq 'keys' data/prices.json | sed 's/^/  /'
-          echo "Counts: [azure, aws, gcp]" && jq '[.azure|length, .aws|length, .gcp|length]' data/prices.json
+          set -euo pipefail
+
+          echo "Top-level keys of data/prices.json:"
+          jq 'keys' data/prices.json | sed 's/^/  /'
+
+          echo "Types of provider fields:"
+          jq '{azure:(.azure|type), aws:(.aws|type), gcp:(.gcp|type)}' data/prices.json
+
+          echo "Counts: [azure, aws, gcp]"
+          jq -r '[ (try ((.azure // [])|length) catch 0),
+                   (try ((.aws   // [])|length) catch 0),
+                   (try ((.gcp   // [])|length) catch 0) ]' data/prices.json || true
 
       - name: Check if files are ignored by .gitignore
         run: |
