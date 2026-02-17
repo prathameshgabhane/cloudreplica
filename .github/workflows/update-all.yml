@@ -2,19 +2,19 @@ name: Update All Cloud Prices
 
 permissions:
   contents: write
-  id-token: write
+  # id-token not needed here unless you add OIDC in aggregate
+  # id-token: write
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 0 * * 1"   # Once a week (Monday at 00:30 UTC)
+    - cron: "30 0 * * 1"   # Monday 00:30 UTC
 
 concurrency:
   group: update-all-cloud-prices
   cancel-in-progress: false
 
 jobs:
-
   # 1) Fetch Azure PAYG data
   azure:
     uses: ./.github/workflows/update-azure.yml
@@ -36,12 +36,18 @@ jobs:
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Install jq (if missing)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
 
       # Download provider artifacts from this same workflow run
       - name: Download Azure artifact
@@ -83,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # If any provider file is missing (shouldn't be), make it an empty object
+          # If any provider file is missing, substitute {}
           [[ -f data/azure/azure.prices.json ]] || echo '{}' > data/azure/azure.prices.json
           [[ -f data/aws/aws.prices.json     ]] || echo '{}' > data/aws/aws.prices.json
           [[ -f data/gcp/gcp.prices.json     ]] || echo '{}' > data/gcp/gcp.prices.json
@@ -98,7 +104,6 @@ jobs:
           # Copy merged to docs
           cp -f data/prices.json docs/data/prices.json
 
-      # Optional: quick sanity print
       - name: Sanity check merged JSON
         run: |
           echo "Top-level keys of data/prices.json:"
@@ -108,9 +113,9 @@ jobs:
         id: git_status
         run: |
           if git diff --quiet -- docs/data data; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Commit final merged cloud prices
