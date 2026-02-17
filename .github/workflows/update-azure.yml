@@ -1,12 +1,16 @@
 name: Fetch Azure Prices
 
 permissions:
-  id-token: write
-  contents: write
+  contents: read        # provider does not commit; orchestrator will
+  id-token: write       # required for OIDC (azure/login@v2)
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
+
+concurrency:
+  group: provider-azure
+  cancel-in-progress: true
 
 jobs:
   fetch-azure:
@@ -14,10 +18,12 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (read-only)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Azure authentication
+      # Azure authentication (OIDC)
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -25,15 +31,68 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Generate ARM (management) token for scripts that call ARM/RateCard/etc.
       - name: Generate ARM Token
+        shell: bash
         run: |
-          ARM_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
-          echo "ARM_TOKEN=$ARM_TOKEN" >> $GITHUB_ENV
+          set -euo pipefail
+          ARM_TOKEN=$(az account get-access-token \
+            --resource https://management.azure.com/ \
+            --query accessToken -o tsv)
+          if [[ -z "${ARM_TOKEN}" ]]; then
+            echo "::error::Failed to acquire ARM token via OIDC."
+            exit 1
+          fi
+          echo "ARM_TOKEN=${ARM_TOKEN}" >> $GITHUB_ENV
 
-      # Fetch Azure pricing only
+      # --- Optional: quick probe that the token works against ARM ---
+      - name: Probe ARM (locations list)
+        shell: bash
+        env:
+          SUB_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TOKEN: ${{ env.ARM_TOKEN }}
+        run: |
+          set -euo pipefail
+          CODE=$(curl -s -o /tmp/arm.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${ARM_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://management.azure.com/subscriptions/${SUB_ID}/locations?api-version=2020-01-01")
+          echo "ARM probe HTTP: ${CODE}"
+          if [[ "${CODE}" != "200" ]]; then
+            echo "::warning::ARM probe failed (HTTP ${CODE}). The fetch script may still succeed if it uses a different API."
+          fi
+
+      - name: Ensure output directory
+        run: mkdir -p data/azure
+
+      # >>> Run your Azure fetcher (adjust envs as your script expects)
       - name: Fetch Azure prices
         run: node scripts/providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
-          AZURE_REGION: "eastus"
+          AZURE_REGION: "eastus"          # change if you want a different default
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # Example extra envs your script may support:
+          # AZURE_CURRENCY: "USD"
+          # AZURE_FORCE_COMPOSE: "1"
+
+      # Validate the output was created and is non-empty
+      - name: Validate Azure output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/azure/azure.prices.json
+          echo "Output size (bytes):"
+          wc -c data/azure/azure.prices.json
+          echo "Top-level keys:"
+          jq 'keys' data/azure/azure.prices.json | sed 's/^/  /' || true
+
+      # Upload artifact for orchestrator (Option A)
+      - name: Upload Azure pricing JSON (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-prices
+          path: data/azure/azure.prices.json
+          if-no-files-found: error
+          retention-days: 7
+``
