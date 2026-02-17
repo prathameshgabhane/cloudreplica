@@ -2,8 +2,8 @@ name: Update All Cloud Prices
 
 permissions:
   contents: write
-  # id-token not needed here unless you add OIDC in aggregate
-  # id-token: write
+  # Note: top-level permissions DO NOT flow into reusable workflows.
+  # You must declare permissions per 'uses:' job below.
 
 on:
   workflow_dispatch: {}
@@ -18,24 +18,34 @@ jobs:
   # 1) Fetch Azure PAYG data
   azure:
     uses: ./.github/workflows/update-azure.yml
+    permissions:
+      contents: read
+      id-token: write        # required by update-azure.yml (azure/login OIDC)
     secrets: inherit
 
   # 2) Fetch AWS PAYG data (runs after Azure)
   aws:
     needs: azure
     uses: ./.github/workflows/update-aws.yml
+    permissions:
+      contents: read         # no OIDC needed by the AWS provider workflow we created
     secrets: inherit
 
   # 3) Fetch GCP PAYG data (runs after AWS)
   gcp:
     needs: aws
     uses: ./.github/workflows/update-gcp.yml
+    permissions:
+      contents: read
+      id-token: write        # required by update-gcp.yml (google-github-actions/auth OIDC)
     secrets: inherit
 
   # 4) Aggregate, publish, commit
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # commit merged outputs
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
