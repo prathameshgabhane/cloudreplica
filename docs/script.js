@@ -10,9 +10,31 @@ import {
   getGcpStorageMonthlyFromCfg
 } from "./ui/utils.js";
 
-import { API_BASE, FALLBACK_META, STORAGE_CFG, loadPricesAndMeta } from "./ui/state.js";
+// ⬇️ CHANGED: only import STORAGE_CFG (we no longer use loadPricesAndMeta/API_BASE/FALLBACK_META)
+import { STORAGE_CFG } from "./ui/state.js";
+
 import { initStorageTypeTooltip, initOsTypeTooltip } from "./ui/tooltips.js";
 import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
+
+/* ============================================================
+   Single-source loader: docs/data/prices.json (FLAT structure)
+   - Adds cache-buster to avoid GH Pages CDN caching old JSON
+   - Guards shape and always returns { meta, azure:[], aws:[], gcp:[] }
+============================================================ */
+async function loadPricesFlat() {
+  const url = `./data/prices.json?v=${Date.now()}`; // relative path + cache-buster
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Unable to fetch prices.json (${res.status})`);
+  const j = await res.json();
+
+  // Expect FLAT: { meta, azure:[], aws:[], gcp:[] }
+  const azure = Array.isArray(j.azure) ? j.azure : [];
+  const aws   = Array.isArray(j.aws)   ? j.aws   : [];
+  const gcp   = Array.isArray(j.gcp)   ? j.gcp   : [];
+  const meta  = j.meta || {};
+
+  return { meta, azure, aws, gcp, generatedAt: j.generatedAt };
+}
 
 /* ============================================================
    3-PROVIDER FAMILY FILTERS (AWS, Azure, GCP)
@@ -110,7 +132,8 @@ export async function compare(resetFamilies = false) {
 
   try {
     resetCards();
-    const data = await loadPricesAndMeta();
+    // ⬇️ CHANGED: use the flat, single-source loader
+    const data = await loadPricesFlat();
 
     /* ---------- AWS ---------- */
     let awsCard;
@@ -150,7 +173,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        STORAGE LABEL RENDER
-    ============================================================ */
+    ============================================================= */
     const selLabel = `${storageAmtGB} GB ${storageType.toUpperCase()}`;
     safeSetText("awsStorageSel", `Storage: ${selLabel}`);
     safeSetText("azStorageSel",  `Storage: ${selLabel}`);
@@ -171,7 +194,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        RENDER AWS
-    ============================================================ */
+    ============================================================= */
     if (!awsCard || awsCard.error) {
       document.getElementById("awsInstance").innerHTML =
         `<strong>Recommended Instance:</strong> Error: ${awsCard?.error ?? "No match"}`;
@@ -186,7 +209,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        RENDER AZURE
-    ============================================================ */
+    ============================================================= */
     if (!azCard || azCard.error) {
       document.getElementById("azInstance").innerHTML =
         `<strong>Recommended VM Size:</strong> Error: ${azCard?.error ?? "No match"}`;
@@ -201,7 +224,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        RENDER GCP
-    ============================================================ */
+    ============================================================= */
     if (!gcpCard || gcpCard.error) {
       document.getElementById("gcpInstance").innerHTML =
         `<strong>Recommended Machine:</strong> Error: ${gcpCard?.error ?? "No match"}`;
@@ -216,7 +239,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        STORAGE COST RENDER
-    ============================================================ */
+    ============================================================= */
     safeSetText("awsStoragePriceHr", fmt(awsStorageHr));
     safeSetText("awsStorageMonthly", fmt(awsStorageMonthly));
 
@@ -235,7 +258,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        TOTAL COSTS
-    ============================================================ */
+    ============================================================= */
     const awsTotalHr  = sumSafe(awsCard?.pricePerHourUSD,  awsStorageHr);
     const awsTotalMon = sumSafe(monthly(awsCard?.pricePerHourUSD), awsStorageMonthly);
 
@@ -256,7 +279,7 @@ export async function compare(resetFamilies = false) {
 
     /* ============================================================
        DONE
-    ============================================================ */
+    ============================================================= */
     showFamilyFilters();
     setStatus("Comparison complete ✓");
 
