@@ -1,11 +1,15 @@
 name: Fetch AWS Prices
 
 permissions:
-  contents: write
+  contents: read          # provider does not commit; orchestrator will
 
 on:
   workflow_call: {}
   workflow_dispatch: {}
+
+concurrency:
+  group: provider-aws
+  cancel-in-progress: true
 
 jobs:
   fetch-aws:
@@ -13,16 +17,61 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (read-only)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node (LTS)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Fetch AWS pricing only
+      # Optional: quick probe against AWS Price List (no auth required)
+      - name: Probe AWS Price List API (sample)
+        shell: bash
+        env:
+          AWS_REGION: "us-east-1"
+        run: |
+          set -euo pipefail
+          CODE=$(curl -s -o /tmp/aws-price.json -w "%{http_code}" \
+            "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/${AWS_REGION}/index.json")
+          echo "AWS Price List probe HTTP: ${CODE}"
+          if [[ "${CODE}" != "200" ]]; then
+            echo "::warning::AWS Price List probe failed (HTTP ${CODE}). Continuing; the fetch script may use a different endpoint or caching."
+          else
+            echo "Top-level keys (truncated):"
+            jq 'keys' /tmp/aws-price.json | head -n 20 || true
+          fi
+
+      - name: Ensure output directory
+        run: mkdir -p data/aws
+
+      # >>> Run your AWS fetcher
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
-          AWS_REGION: "us-east-1"
+          AWS_REGION: "us-east-1"      # change if you want a different default
+          # If your script supports currency or compose flags, add them here:
+          # AWS_CURRENCY: "USD"
+          # AWS_FORCE_COMPOSE: "1"
+
+      # Validate the output was created and is non-empty
+      - name: Validate AWS output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/aws/aws.prices.json
+          echo "Output size (bytes):"
+          wc -c data/aws/aws.prices.json
+          echo "Top-level keys:"
+          jq 'keys' data/aws/aws.prices.json | sed 's/^/  /' || true
+
+      # Upload artifact for orchestrator (Option A)
+      - name: Upload AWS pricing JSON (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-prices
+          path: data/aws/aws.prices.json
+          if-no-files-found: error
+          retention-days: 7
