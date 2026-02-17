@@ -2,7 +2,6 @@ name: Update All Cloud Prices
 
 permissions:
   contents: write
-  # NOTE: top-level permissions do NOT flow into reusable workflows; we set per-job below.
 
 on:
   workflow_dispatch: {}
@@ -39,7 +38,7 @@ jobs:
       id-token: write       # OIDC for google-github-actions/auth
     secrets: inherit
 
-  # 4) Aggregate (flat merge -> docs/data/prices.json for UI)
+  # 4) Aggregate (FLAT merge -> docs/data/prices.json for UI)
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
@@ -59,7 +58,7 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      # Download artifacts from THIS workflow run
+      # Download artifacts produced by the 3 provider jobs in THIS workflow run
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
@@ -109,30 +108,25 @@ jobs:
           echo "AW_SRC=${AW_SRC}" >> "$GITHUB_ENV"
           echo "GC_SRC=${GC_SRC}" >> "$GITHUB_ENV"
 
-      - name: Stage provider files into repo layout
+      - name: Stage provider files into site folder
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p data/azure data/aws data/gcp
           mkdir -p docs/data/azure docs/data/aws docs/data/gcp
 
-          cp -f "${AZ_SRC}" data/azure/azure.prices.json
-          cp -f "${AW_SRC}" data/aws/aws.prices.json
-          cp -f "${GC_SRC}" data/gcp/gcp.prices.json
+          cp -f "${AZ_SRC}" docs/data/azure/azure.prices.json
+          cp -f "${AW_SRC}" docs/data/aws/aws.prices.json
+          cp -f "${GC_SRC}" docs/data/gcp/gcp.prices.json
 
-          cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
-          cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
-          cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
-
-      # ---------- FLAT MERGE → data/prices.json then docs/data/prices.json ----------
-      - name: Merge into data/prices.json (FLAT for UI)
+      # ---------- FLAT MERGE → docs/data/prices.json ----------
+      - name: Merge into docs/data/prices.json (FLAT for UI)
         shell: bash
         run: |
           set -euo pipefail
           jq -n \
-            --slurpfile az data/azure/azure.prices.json \
-            --slurpfile aw data/aws/aws.prices.json \
-            --slurpfile gc data/gcp/gcp.prices.json '
+            --slurpfile az docs/data/azure/azure.prices.json \
+            --slurpfile aw docs/data/aws/aws.prices.json \
+            --slurpfile gc docs/data/gcp/gcp.prices.json '
             {
               meta: {
                 os:   (($az[0].meta.os + $aw[0].meta.os + $gc[0].meta.os) | unique),
@@ -143,44 +137,28 @@ jobs:
               aws:   $aw[0].compute,
               gcp:   $gc[0].compute,
               generatedAt: (now | todate)
-            }' > data/prices.json
+            }' > docs/data/prices.json
 
-          cp -f data/prices.json docs/data/prices.json
-
-      # SAFER diagnostics: never fail the job here
-      - name: Show merged keys and counts (safe)
+      # Validate merged structure and print safe diagnostics (never fail on logs)
+      - name: Validate & show merged keys and counts (safe)
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Top-level keys of data/prices.json:"
-          jq 'keys' data/prices.json | sed 's/^/  /'
+          echo "Top-level keys of docs/data/prices.json:"
+          jq 'keys' docs/data/prices.json | sed 's/^/  /'
 
           echo "Types of provider fields:"
-          jq '{azure:(.azure|type), aws:(.aws|type), gcp:(.gcp|type)}' data/prices.json
+          jq '{azure:(.azure|type), aws:(.aws|type), gcp:(.gcp|type)}' docs/data/prices.json
 
           echo "Counts: [azure, aws, gcp]"
           jq -r '[ (try ((.azure // [])|length) catch 0),
                    (try ((.aws   // [])|length) catch 0),
-                   (try ((.gcp   // [])|length) catch 0) ]' data/prices.json || true
+                   (try ((.gcp   // [])|length) catch 0) ]' docs/data/prices.json || true
 
-      - name: Check if files are ignored by .gitignore
-        run: |
-          echo "git check-ignore:"
-          git check-ignore -v \
-            data/azure/azure.prices.json \
-            data/aws/aws.prices.json \
-            data/gcp/gcp.prices.json \
-            data/prices.json \
-            docs/data/azure/azure.prices.json \
-            docs/data/aws/aws.prices.json \
-            docs/data/gcp/gcp.prices.json \
-            docs/data/prices.json || true
-
-      - name: Detect changes
+      - name: Detect changes under docs/data
         id: git_status
         run: |
-          if git diff --quiet -- docs/data data; then
+          if git diff --quiet -- docs/data; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -201,10 +179,6 @@ jobs:
           git reset --hard origin/main
 
           git add -f \
-            data/azure/azure.prices.json \
-            data/aws/aws.prices.json \
-            data/gcp/gcp.prices.json \
-            data/prices.json \
             docs/data/azure/azure.prices.json \
             docs/data/aws/aws.prices.json \
             docs/data/gcp/gcp.prices.json \
