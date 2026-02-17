@@ -17,6 +17,20 @@ import { initStorageTypeTooltip, initOsTypeTooltip } from "./ui/tooltips.js";
 import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
 
 /* ============================================================
+   Freshness loader: docs/data/buildInfo.json
+   (published by update-all.yml)
+============================================================ */
+async function loadBuildInfo() {
+  try {
+    const r = await fetch('./data/buildInfo.json?v=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+/* ============================================================
    Single-source loader: docs/data/prices.json
    - Adds cache-buster to avoid GH Pages CDN caching old JSON
    - Accepts BOTH shapes and always returns { meta, azure:[], aws:[], gcp:[], generatedAt? }
@@ -24,8 +38,8 @@ import { findBestAws, findBestAzure, gcpFamilyMatch } from "./ui/matchers.js";
    FLAT (preferred):
      { meta:{...}, azure:[...], aws:[...], gcp:[...], generatedAt? }
 
-   WRAPPED (your current live file):
-     { azure:{meta:{...}, compute:[...]}, aws:{meta:{...}, compute:[...]}, gcp:{meta:{...}, compute:[...] }, generatedAt? }
+   WRAPPED (tolerated):
+     { azure:{meta:{...}, compute:[...]}, aws:{meta:{...}, compute:[...]}, gcp:{meta:{...}, compute:[...] , ... } }
 ============================================================ */
 async function loadPricesFlat() {
   const url = `./data/prices.json?v=${Date.now()}`; // relative path + cache-buster
@@ -44,7 +58,7 @@ async function loadPricesFlat() {
     };
   }
 
-  // If WRAPPED (current live file)
+  // If WRAPPED (tolerated)
   const looksWrapped =
     j && typeof j === "object" &&
     j.azure && j.aws && j.gcp &&
@@ -162,6 +176,23 @@ export async function compare(resetFamilies = false) {
     resetCards();
     // Use the shape-tolerant loader
     const data = await loadPricesFlat();
+
+    // >>> Footer: show freshness + row counts
+    // If you're now publishing buildInfo.json from update-all.yml,
+    // this will display the timestamp and counts below the status bar.
+    try {
+      const info = await loadBuildInfo();
+      const counts = {
+        az: (data.azure || []).length,
+        aw: (data.aws   || []).length,
+        gc: (data.gcp   || []).length
+      };
+      const when = info?.generatedAt || '—';
+      safeSetText(
+        "dataInfo",
+        `Data: ${when} · Rows — Azure: ${counts.az}, AWS: ${counts.aw}, GCP: ${counts.gc}`
+      );
+    } catch { /* non-fatal */ }
 
     /* ---------- AWS ---------- */
     let awsCard;
