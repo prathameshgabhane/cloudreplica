@@ -36,25 +36,73 @@ jobs:
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: Set up Node (LTS)
-        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          fetch-depth: 0
 
-      - name: Aggregate cloud provider files
-        run: node scripts/aggregate/build-prices.js
+      # Download provider artifacts from this same workflow run
+      - name: Download Azure artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: azure-prices
+          path: _artifacts/azure
 
-      - name: Publish data to docs/
+      - name: Download AWS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aws-prices
+          path: _artifacts/aws
+
+      - name: Download GCP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gcp-prices
+          path: _artifacts/gcp
+
+      - name: Stage provider files into repo layout
+        shell: bash
         run: |
-          mkdir -p docs/data/aws docs/data/azure docs/data/gcp
-          cp -f data/prices.json             docs/data/prices.json
-          cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
+          set -euo pipefail
+          mkdir -p data/azure data/aws data/gcp
+          mkdir -p docs/data/azure docs/data/aws docs/data/gcp
+
+          # Copy from artifacts into repo (data/)
+          cp _artifacts/azure/*.json data/azure/azure.prices.json
+          cp _artifacts/aws/*.json   data/aws/aws.prices.json
+          cp _artifacts/gcp/*.json   data/gcp/gcp.prices.json
+
+          # Also copy into docs/data/* for site consumption
           cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
+          cp -f data/aws/aws.prices.json     docs/data/aws/aws.prices.json
           cp -f data/gcp/gcp.prices.json     docs/data/gcp/gcp.prices.json
+
+      - name: Merge into data/prices.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          # If any provider file is missing (shouldn't be), make it an empty object
+          [[ -f data/azure/azure.prices.json ]] || echo '{}' > data/azure/azure.prices.json
+          [[ -f data/aws/aws.prices.json     ]] || echo '{}' > data/aws/aws.prices.json
+          [[ -f data/gcp/gcp.prices.json     ]] || echo '{}' > data/gcp/gcp.prices.json
+
+          jq -n \
+            --slurpfile az data/azure/azure.prices.json \
+            --slurpfile aw data/aws/aws.prices.json \
+            --slurpfile gc data/gcp/gcp.prices.json \
+            '{azure: $az[0], aws: $aw[0], gcp: $gc[0]}' \
+            > data/prices.json
+
+          # Copy merged to docs
+          cp -f data/prices.json docs/data/prices.json
+
+      # Optional: quick sanity print
+      - name: Sanity check merged JSON
+        run: |
+          echo "Top-level keys of data/prices.json:"
+          jq 'keys' data/prices.json | sed 's/^/  /'
 
       - name: Detect changes
         id: git_status
