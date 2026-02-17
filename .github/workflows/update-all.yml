@@ -139,6 +139,22 @@ jobs:
               generatedAt: (now | todate)
             }' > docs/data/prices.json
 
+      # ---------- HARD SHAPE GUARD (fail if wrapped sneaks in) ----------
+      - name: Validate FLAT structure (hard fail if wrapped)
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            (has("azure") and has("aws") and has("gcp")) and
+            (.azure | type=="array") and
+            (.aws   | type=="array") and
+            (.gcp   | type=="array")
+          ' docs/data/prices.json >/dev/null || {
+            echo "::error::docs/data/prices.json is not FLAT (azure/aws/gcp must be arrays)."
+            echo "Preview of docs/data/prices.json:"; head -n 80 docs/data/prices.json || true
+            exit 1
+          }
+
       # Validate merged structure and print safe diagnostics (never fail on logs)
       - name: Validate & show merged keys and counts (safe)
         shell: bash
