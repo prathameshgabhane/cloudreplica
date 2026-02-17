@@ -28,6 +28,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Ensure jq (for quick validation)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
       # OIDC → short-lived Google Cloud access token
       - name: Google OIDC Auth
         id: auth
@@ -37,7 +44,6 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
           token_format: access_token
-          # The action also exports GOOGLE_APPLICATION_CREDENTIALS and related envs.
 
       - name: Show config (debug)
         run: |
@@ -46,16 +52,16 @@ jobs:
           echo "Currency:$GCP_CURRENCY"
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: "us-central1"          # (REGION)
+          GCP_REGION: "us-central1"
           GCP_CURRENCY: "USD"
 
-      # >>> Hard pre-flight checks + live Compute API probe
+      # Hard pre-flight checks + live Compute API probe
       - name: Pre-flight checks (Catalog + Fallback)
         shell: bash
         env:
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: "us-central1"          # (REGION)
+          GCP_REGION: "us-central1"
           GCP_CURRENCY: "USD"
           OIDC_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
@@ -64,21 +70,21 @@ jobs:
           echo "Region: ${GCP_REGION}"
           echo "Currency: ${GCP_CURRENCY}"
 
-          # 1) API key check (Catalog path) — optional because we prefer OAuth
+          # 1) API key presence (optional—OAuth preferred)
           if [[ -z "${GCP_PRICE_API_KEY:-}" ]]; then
-            echo "Catalog: API key not set (that's OK; using OAuth/Bearer)."
+            echo "Catalog: API key not set (OK; using OAuth/Bearer)."
           else
             echo "Catalog: API key is set ✔ (will only be used if OAuth token missing)."
           fi
 
-          # 2) Project ID check (fallback path)
+          # 2) Project ID presence (needed for Compute fallback/shape listing)
           if [[ -z "${GCP_PROJECT_ID:-}" ]]; then
             echo "::error::GCP_PROJECT_ID is empty (fallback composition will be skipped)."
             exit 1
           fi
           echo "Fallback: Project ID is set ✔ -> ${GCP_PROJECT_ID}"
 
-          # 3) OIDC token presence check (fallback path)
+          # 3) OIDC token presence (needed for Compute fallback and OAuth to Catalog)
           if [[ -z "${OIDC_TOKEN:-}" ]]; then
             echo "::error::OIDC access token not found; google-github-actions/auth did not output access_token."
             exit 1
@@ -96,10 +102,10 @@ jobs:
           fi
           echo "Compute API probe OK ✔ (zones.list)"
 
-          # Ensure output dir exists so the write never fails on missing path
+          # Ensure output dir exists
           mkdir -p data/gcp
 
-      # (Optional) Quick peek at what Catalog returns using the same OIDC token.
+      # (Optional) Quick peek at the Catalog API via OAuth
       - name: Probe Catalog API (OAuth, first 10)
         shell: bash
         env:
@@ -119,29 +125,38 @@ jobs:
             jq -r '.skus[0:10][]?.description' /tmp/skus.json || true
           fi
 
+      # >>> Run your GCP fetcher (writes to data/gcp/gcp.prices.json)
       - name: Fetch GCP prices (FULL mode)
         run: node scripts/providers/gcp.fetch.js
         env:
-          # Public Catalog (free) - still passed; code prefers OAuth if present
+          # Public Catalog key (optional; OAuth preferred)
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
-          GCP_REGION: "us-central1"          # (REGION)
+
+          # Region / currency / project
+          GCP_REGION: "us-central1"
           GCP_CURRENCY: "USD"
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
-          # >>> Pass the OIDC access token to the script (for fallback & optional OAuth to Catalog)
+          # OAuth token for fallback composition and optional OAuth to Catalog
           GCLOUD_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
 
           # One-time fallback (keep commented unless needed)
           # GCP_FORCE_COMPOSE: "1"
 
-      # Validate the output exists for this job (helps spot silent failures)
+      # Validate the output exists and shows basic stats
       - name: Validate output
+        shell: bash
         run: |
+          set -euo pipefail
           test -s data/gcp/gcp.prices.json
           echo "Output size (bytes):"
           wc -c data/gcp/gcp.prices.json
+          echo "Top-level keys:"
+          jq 'keys' data/gcp/gcp.prices.json | sed 's/^/  /' || true
+          echo "Compute array length:"
+          jq '.compute | length' data/gcp/gcp.prices.json || true
 
-      # Publish the exact JSON as an artifact for the orchestrator
+      # Publish as artifact for orchestrator (normal mode)
       - name: Upload GCP pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
@@ -149,3 +164,38 @@ jobs:
           path: data/gcp/gcp.prices.json
           if-no-files-found: error
           retention-days: 7
+
+      # =========================================
+      # OPTIONAL DEBUG MODE — publish & commit directly to docs/data
+      # Toggle via repository variable: DEBUG_PUBLISH=true
+      # =========================================
+      - name: Debug Publish to docs/data (optional)
+        if: ${{ vars.DEBUG_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "DEBUG MODE ENABLED: Publishing GCP output directly to docs/data/gcp"
+          mkdir -p docs/data/gcp
+          cp -f data/gcp/gcp.prices.json docs/data/gcp/gcp.prices.json
+
+      - name: Commit debug provider files (optional)
+        if: ${{ vars.DEBUG_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Align with remote to avoid rebase prompts
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          git add -f docs/data/gcp/gcp.prices.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Debug publish: GCP pricing update"
+          git push
