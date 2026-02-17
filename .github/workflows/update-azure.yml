@@ -104,7 +104,7 @@ jobs:
           echo "Compute array length:"
           jq '.compute | length' data/azure/azure.prices.json || true
 
-      # Upload artifact for orchestrator
+      # Upload artifact for orchestrator (normal mode)
       - name: Upload Azure pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
@@ -112,3 +112,38 @@ jobs:
           path: data/azure/azure.prices.json
           if-no-files-found: error
           retention-days: 7
+
+      # =========================================
+      # OPTIONAL DEBUG MODE — publish & commit directly to docs/data
+      # Toggle via repository variable: DEBUG_PUBLISH=true
+      # =========================================
+      - name: Debug Publish to docs/data (optional)
+        if: ${{ vars.DEBUG_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "DEBUG MODE ENABLED: Publishing Azure output directly to docs/data/azure"
+          mkdir -p docs/data/azure
+          cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
+
+      - name: Commit debug provider files (optional)
+        if: ${{ vars.DEBUG_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Align with remote to avoid rebase prompts
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          git add -f docs/data/azure/azure.prices.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Debug publish: Azure pricing update"
+          git push
