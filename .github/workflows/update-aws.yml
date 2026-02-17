@@ -27,6 +27,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Ensure jq (for quick validation)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
       # Optional: quick probe against AWS Price List (no auth required)
       - name: Probe AWS Price List API (sample)
         shell: bash
@@ -44,15 +51,16 @@ jobs:
             jq 'keys' /tmp/aws-price.json | head -n 20 || true
           fi
 
+      # Ephemeral workspace path (NOT committed to repo)
       - name: Ensure output directory
         run: mkdir -p data/aws
 
-      # >>> Run your AWS fetcher
+      # >>> Run your AWS fetcher (writes to data/aws/aws.prices.json)
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
-          AWS_REGION: "us-east-1"      # change if you want a different default
-          # If your script supports currency or compose flags, add them here:
+          AWS_REGION: "us-east-1"
+          # If your script supports more env flags, add them here:
           # AWS_CURRENCY: "USD"
           # AWS_FORCE_COMPOSE: "1"
 
@@ -66,8 +74,10 @@ jobs:
           wc -c data/aws/aws.prices.json
           echo "Top-level keys:"
           jq 'keys' data/aws/aws.prices.json | sed 's/^/  /' || true
+          echo "Compute array length:"
+          jq '.compute | length' data/aws/aws.prices.json || true
 
-      # Upload artifact for orchestrator (Option A)
+      # Upload artifact for orchestrator
       - name: Upload AWS pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
