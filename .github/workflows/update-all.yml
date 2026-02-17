@@ -6,14 +6,13 @@ permissions:
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 0 * * 1"   # Monday 00:30 UTC
+    - cron: "30 0 * * 1"
 
 concurrency:
   group: update-all-cloud-prices
   cancel-in-progress: false
 
 jobs:
-  # 1) Azure
   azure:
     uses: ./.github/workflows/update-azure.yml
     permissions:
@@ -21,7 +20,6 @@ jobs:
       id-token: write
     secrets: inherit
 
-  # 2) AWS
   aws:
     needs: azure
     uses: ./.github/workflows/update-aws.yml
@@ -29,7 +27,6 @@ jobs:
       contents: read
     secrets: inherit
 
-  # 3) GCP
   gcp:
     needs: aws
     uses: ./.github/workflows/update-gcp.yml
@@ -38,7 +35,6 @@ jobs:
       id-token: write
     secrets: inherit
 
-  # 4) Aggregate (Produce FLAT docs/data/prices.json for UI)
   aggregate:
     needs: gcp
     runs-on: ubuntu-latest
@@ -58,7 +54,9 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      # --- Download artifacts ---
+      # ------------------------------
+      # Download artifacts
+      # ------------------------------
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
@@ -83,7 +81,9 @@ jobs:
           echo "== AWS ARTIFACT =="   && find _artifacts/aws   -type f -maxdepth 6 -print || true
           echo "== GCP ARTIFACT =="   && find _artifacts/gcp   -type f -maxdepth 6 -print || true
 
-      # --- Validate ---
+      # ------------------------------
+      # Validate
+      # ------------------------------
       - name: Validate provider JSONs
         shell: bash
         run: |
@@ -92,38 +92,39 @@ jobs:
           AW_SRC=$(find _artifacts/aws   -type f -name '*.json' -print -quit || true)
           GC_SRC=$(find _artifacts/gcp   -type f -name '*.json' -print -quit || true)
 
-          echo "AZ_SRC=${AZ_SRC}"
-          echo "AW_SRC=${AW_SRC}"
-          echo "GC_SRC=${GC_SRC}"
+          echo "AZ_SRC=$AZ_SRC"
+          echo "AW_SRC=$AW_SRC"
+          echo "GC_SRC=$GC_SRC"
 
-          [[ -n "${AZ_SRC}" && -s "${AZ_SRC}" ]] || { echo "::error::Azure JSON missing/empty"; exit 1; }
-          [[ -n "${AW_SRC}" && -s "${AW_SRC}" ]] || { echo "::error::AWS JSON missing/empty"; exit 1; }
-          [[ -n "${GC_SRC}" && -s "${GC_SRC}" ]] || { echo "::error::GCP JSON missing/empty"; exit 1; }
+          [[ -n "$AZ_SRC" && -s "$AZ_SRC" ]] || { echo "::error::Azure JSON missing"; exit 1; }
+          [[ -n "$AW_SRC" && -s "$AW_SRC" ]] || { echo "::error::AWS JSON missing"; exit 1; }
+          [[ -n "$GC_SRC" && -s "$GC_SRC" ]] || { echo "::error::GCP JSON missing"; exit 1; }
 
-          echo "Azure:" && jq 'keys' "${AZ_SRC}" | head -n 30 || true
-          echo "AWS:"   && jq 'keys' "${AW_SRC}" | head -n 30 || true
-          echo "GCP:"   && jq 'keys' "${GC_SRC}" | head -n 30 || true
+          echo "Azure:" && jq 'keys' "$AZ_SRC" | head -n 30 || true
+          echo "AWS:"   && jq 'keys' "$AW_SRC" | head -n 30 || true
+          echo "GCP:"   && jq 'keys' "$GC_SRC" | head -n 30 || true
 
-          echo "AZ_SRC=${AZ_SRC}" >> "$GITHUB_ENV"
-          echo "AW_SRC=${AW_SRC}" >> "$GITHUB_ENV"
-          echo "GC_SRC=${GC_SRC}" >> "$GITHUB_ENV"
+          echo "AZ_SRC=$AZ_SRC" >> $GITHUB_ENV
+          echo "AW_SRC=$AW_SRC" >> $GITHUB_ENV
+          echo "GC_SRC=$GC_SRC" >> $GITHUB_ENV
 
-      # --- Stage into docs/data ---
+      # ------------------------------
+      # Stage into docs/data
+      # ------------------------------
       - name: Stage provider outputs into docs/data
         shell: bash
         run: |
-          set -euo pipefail
           mkdir -p docs/data/azure docs/data/aws docs/data/gcp
+          cp -f "$AZ_SRC" docs/data/azure/azure.prices.json
+          cp -f "$AW_SRC" docs/data/aws/aws.prices.json
+          cp -f "$GC_SRC" docs/data/gcp/gcp.prices.json
 
-          cp -f "${AZ_SRC}" docs/data/azure/azure.prices.json
-          cp -f "${AW_SRC}" docs/data/aws/aws.prices.json
-          cp -f "${GC_SRC}" docs/data/gcp/gcp.prices.json
-
-      # --- FLAT MERGE ---
+      # ------------------------------
+      # FLAT MERGE
+      # ------------------------------
       - name: Merge into docs/data/prices.json (FLAT)
         shell: bash
         run: |
-          set -euo pipefail
           jq -n \
             --slurpfile az docs/data/azure/azure.prices.json \
             --slurpfile aw docs/data/aws/aws.prices.json \
@@ -139,27 +140,27 @@ jobs:
               gcp:   $gc[0].compute
             }' > docs/data/prices.json
 
-      # --- Shape Guard (HARD FAIL if WRAPPED ever appears) ---
+      # ------------------------------
+      # Enforce FLAT
+      # ------------------------------
       - name: Enforce FLAT shape
         shell: bash
         run: |
-          set -euo pipefail
           jq -e '
-            (has("azure") and has("aws") and has("gcp")) and
-            (.azure | type=="array") and
-            (.aws   | type=="array") and
-            (.gcp   | type=="array")
+            (.azure|type=="array") and
+            (.aws|type=="array") and
+            (.gcp|type=="array")
           ' docs/data/prices.json >/dev/null || {
-            echo "::error::prices.json is NOT FLAT — azure/aws/gcp must be arrays"
-            head -n 80 docs/data/prices.json || true
+            echo "::error::prices.json is NOT FLAT"
             exit 1
           }
 
-      # --- buildInfo.json (freshness only) ---
+      # ------------------------------
+      # buildInfo.json
+      # ------------------------------
       - name: Write buildInfo.json
         shell: bash
         run: |
-          set -euo pipefail
           cat > docs/data/buildInfo.json <<'JSON'
           {
             "generatedAt": "__STAMP__"
@@ -167,31 +168,47 @@ jobs:
           JSON
           sed -i "s/__STAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" docs/data/buildInfo.json
 
-      # --- Diagnostics ---
+      # ------------------------------
+      # Diagnostics (SAFE — cannot fail)
+      # ------------------------------
       - name: Diagnostics (safe)
         shell: bash
         run: |
-          echo "Keys:" && jq 'keys' docs/data/prices.json
-          echo "Types:" && jq '{azure:(.azure|type),aws:(.aws|type),gcp:(.gcp|type)}' docs/data/prices.json
-          echo "Counts:" && jq '[.azure|length,.aws|length,.gcp|length]' docs/data/prices.json
+          echo "Keys:"
+          jq 'keys' docs/data/prices.json || true
 
-      # --- Detect changes ---
+          echo "Types:"
+          jq '{azure:(.azure|type), aws:(.aws|type), gcp:(.gcp|type)}' docs/data/prices.json || true
+
+          echo "Counts:"
+          jq '
+            [
+              (try (.azure|length) catch 0),
+              (try (.aws|length)   catch 0),
+              (try (.gcp|length)   catch 0)
+            ]
+          ' docs/data/prices.json || true
+
+      # ------------------------------
+      # Detect changes
+      # ------------------------------
       - name: Detect changes
         id: git_status
         run: |
           if git diff --quiet -- docs/data; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # --- Commit ---
+      # ------------------------------
+      # Commit
+      # ------------------------------
       - name: Commit merged cloud prices
         if: steps.git_status.outputs.changed == 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch origin main
