@@ -1,4 +1,4 @@
-name: fetch-oci
+name: Fetch OCI Prices
 
 on:
   workflow_dispatch:
