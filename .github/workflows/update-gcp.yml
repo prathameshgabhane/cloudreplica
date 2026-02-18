@@ -156,6 +156,19 @@ jobs:
           echo "Compute array length:"
           jq '.compute | length' data/gcp/gcp.prices.json || true
 
+      # Quick coverage summary so you can see Memory/Compute/General counts
+      - name: Summarize family coverage
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Counts by category:"
+          jq -r '.compute | group_by(.category) | map({cat: .[0].category, count: length})' data/gcp/gcp.prices.json
+          echo "Counts by category × series:"
+          jq -r '.compute | group_by(.category, .series) | map({cat: .[0].category, series: .[0].series, count: length})' data/gcp/gcp.prices.json
+          echo "Counts by category × vCPU:"
+          jq -r '.compute | group_by(.category, .vcpu) | map({cat: .[0].category, vcpu: .[0].vcpu, count: length})' data/gcp/gcp.prices.json
+
       # Publish as artifact for orchestrator (normal mode)
       - name: Upload GCP pricing JSON (artifact)
         uses: actions/upload-artifact@v4
@@ -185,17 +198,13 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Align with remote to avoid rebase prompts
           git fetch origin main
           git checkout main
           git reset --hard origin/main
-
           git add -f docs/data/gcp/gcp.prices.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-
           git commit -m "Debug publish: GCP pricing update"
           git push
