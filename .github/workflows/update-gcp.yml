@@ -5,7 +5,11 @@ permissions:
   id-token: write           # required for OIDC
 
 on:
-  workflow_call: {}
+  workflow_call:
+    outputs:
+      run_id:
+        description: "Run ID of this reusable workflow execution"
+        value: ${{ github.run_id }}
   workflow_dispatch: {}
 
 concurrency:
