@@ -1,0 +1,74 @@
+name: fetch-oci
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "35 2 * * *"  # daily at 02:35 UTC
+
+jobs:
+  fetch-oci:
+    runs-on: ubuntu-latest
+    env:
+      OCI_REGION: us-ashburn-1     # change if you want a different default
+      NODE_OPTIONS: --no-deprecation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ensure jq (for debug)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
+      - name: Show config
+        run: |
+          echo "Region:  $OCI_REGION"
+          echo "Node:    $(node -v)"
+
+      - name: Run OCI fetcher
+        run: node scripts/providers/oci.fetch.js
+
+      - name: Inspect output
+        run: |
+          test -s data/oci/oci.prices.json
+          echo "Output size (bytes):"
+          wc -c data/oci/oci.prices.json
+          echo "Top-level keys:"
+          jq 'keys' data/oci/oci.prices.json | sed 's/^/  /' || true
+          echo "Storage block:"
+          jq '.storage' data/oci/oci.prices.json || true
+
+      - name: Upload OCI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-prices
+          path: data/oci/oci.prices.json
+          retention-days: 7
+
+      # Optional: publish to docs/ for your site (debug mode)
+      - name: Publish (debug)
+        if: ${{ always() }}
+        run: |
+          mkdir -p docs/data/oci
+          cp -f data/oci/oci.prices.json docs/data/oci/oci.prices.json
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          git add -f docs/data/oci/oci.prices.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Debug publish: OCI pricing update"
+          git push
