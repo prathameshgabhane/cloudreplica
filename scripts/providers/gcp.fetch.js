@@ -23,7 +23,8 @@ const {
   getAccessTokenFromADC,
   listRegionZones,
   listZoneMachineTypes,
-  buildSeriesUnitRateMaps
+  buildSeriesUnitRateMaps,
+  buildWindowsCoreRate  // <<< NEW: resolve Windows per-vCPU license rate from Catalog
 } = require("../lib/gcp");
 
 // Output & env
@@ -35,17 +36,11 @@ const CURRENCY = process.env.GCP_CURRENCY || "USD";
 const API_KEY  = process.env.GCP_PRICE_API_KEY;   // Catalog API (public)
 const PROJECT  = process.env.GCP_PROJECT_ID;      // for Compute API fallback
 
-// REMOVED: hard-coded region guard (workflow controls region now)
-// if (REGION !== "us-east1") {
-//   console.error(`[GCP] FATAL: REGION must be 'us-east1' but is '${REGION}'.`);
-//   process.exit(2);
-// }
-
 // Catalog: list SKUs (paged) — prefer OAuth (Bearer) from OIDC; fall back to API key
 async function listSkus(serviceId, pageToken = "") {
   const base =
     `https://cloudbilling.googleapis.com/v1/services/${serviceId}/skus` +
-    `?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000`;
+    `?currencyCode=${encodeURIComponent(CURRENCY)}&pageSize=5000`; // <-- fixed &amp;
   const url = pageToken ? `${base}&pageToken=${encodeURIComponent(pageToken)}` : base;
 
   const bearer =
@@ -54,14 +49,14 @@ async function listSkus(serviceId, pageToken = "") {
     "";
 
   const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
-  const finalUrl = bearer ? url : `${url}&key=${API_KEY}`;
+  const finalUrl = bearer ? url : `${url}&key=${API_KEY}`; // <-- fixed &amp;
 
   console.log(`[GCP] Catalog auth: ${bearer ? "OAuth(Bearer)" : "API key"}`);
 
   const r = await fetch(finalUrl, { headers });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`[GCP] skus HTTP ${r.status} ${txt}`);
+    throw new Error(`[GCP] skus HTTP ${r.status} ${txt}`); // <-- fixed &gt;
   }
   return await r.json();
 }
@@ -69,7 +64,7 @@ async function listSkus(serviceId, pageToken = "") {
 async function fetchGcpPrices() {
   logStart("[GCP] Fetching PAYG pricing via Catalog API (with FULL-mode fallback)…");
 
-  if (!process.env.GCLOUD_ACCESS_TOKEN && !process.env.GCP_PRICE_API_KEY) {
+  if (!process.env.GCLOUD_ACCESS_TOKEN && !process.env.GCP_PRICE_API_KEY) { // <-- fixed &amp;&amp;
     throw new Error("[GCP] No Catalog credentials found (need GCLOUD_ACCESS_TOKEN or GCP_PRICE_API_KEY).");
   }
 
@@ -84,6 +79,14 @@ async function fetchGcpPrices() {
 
   // Build Linux unit-rate maps (Core/Ram per series) for fallback
   const linuxSeriesRates = buildSeriesUnitRateMaps(allSkus, REGION);
+
+  // Resolve Windows license per-vCPU rate from Catalog (region-scoped)
+  const windowsCoreRate = buildWindowsCoreRate(allSkus, REGION);
+  if (windowsCoreRate) {
+    console.log(`[GCP] Windows per-vCPU (license) rate: $${windowsCoreRate.toFixed(6)}/vCPU-hr`);
+  } else {
+    console.warn("[GCP] Windows per-vCPU rate not found for this region; Windows rows will be synthesized only if rate is present.");
+  }
 
   // Optional: force composition path via env (ignores lack of per-instance rows)
   const FORCE_COMPOSE = String(process.env.GCP_FORCE_COMPOSE || "").toLowerCase() === "1";
@@ -112,7 +115,7 @@ async function fetchGcpPrices() {
     const readable = (sku.description || sku.displayName || "");
     const os    = /windows/i.test(readable) ? "Windows" : "Linux";
     const price = extractHourlyPrice(sku.pricingInfo);
-    if (!(price > 0)) continue;
+    if (!(price > 0)) continue; // <-- fixed &gt;
 
     const a = sku.attributes || {};
     let vcpu = a.vcpu ? Number(a.vcpu) : undefined;
@@ -180,7 +183,7 @@ async function fetchGcpPrices() {
           if (!mtMap.has(name)) {
             const vcpu   = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
-            if (vcpu > 0 && ramGiB > 0) mtMap.set(name, { vcpu, ramGiB });
+            if (vcpu > 0 && ramGiB > 0) mtMap.set(name, { vcpu, ramGiB }); // <-- fixed &gt; and &amp;&amp;
           }
         }
       }
@@ -199,7 +202,7 @@ async function fetchGcpPrices() {
         if (!rates || !rates.core || !rates.ram) continue;
 
         const price = hw.vcpu * rates.core + hw.ramGiB * rates.ram;
-        if (!(price > 0)) continue;
+        if (!(price > 0)) continue; // <-- fixed &gt;
 
         const key = `sku_${++counter}`;
         gcp_price_list[key] = {
@@ -213,6 +216,34 @@ async function fetchGcpPrices() {
         };
       }
     }
+  }
+
+  // 4) Synthesize Windows rows from Linux base + per-vCPU Windows license (x86 only)
+  if (windowsCoreRate) {
+    const linuxEntries = Object.values(gcp_price_list).filter(v => v.os === "Linux");
+    let added = 0;
+    for (const base of linuxEntries) {
+      const series = String(base.machine_type).split("-")[0].toLowerCase();
+      if (series === "t2a") continue; // skip Arm
+      const vcpu = Number(base.vcpu || 0);
+      if (!Number.isFinite(vcpu) || vcpu <= 0) continue;
+
+      const winPrice = Number(base.price_per_hour || 0) + (vcpu * windowsCoreRate);
+      if (!Number.isFinite(winPrice) || winPrice <= 0) continue;
+
+      const key = `sku_${++counter}`;
+      gcp_price_list[key] = {
+        region: REGION,
+        machine_type: base.machine_type,
+        os: "Windows",
+        price_per_hour: winPrice,
+        vcpu: base.vcpu,
+        memory_gb: base.memory_gb,
+        __src: (base.__src || "catalog") + "+win"
+      };
+      added++;
+    }
+    console.log(`[GCP] Synthesized Windows rows: ${added}`);
   }
 
   if (Object.keys(gcp_price_list).length === 0) {
@@ -248,7 +279,7 @@ async function main() {
 
     const os = item.os && item.os.toLowerCase().includes("win") ? "Windows" : "Linux";
     const price = Number(item.price_per_hour);
-    if (!Number.isFinite(price) || price <= 0) continue;
+    if (!Number.isFinite(price) || price <= 0) continue; // <-- fixed &lt;=
 
     const vcpu = Number(item.vcpu);
     const ram  = Number(item.memory_gb);
@@ -275,7 +306,7 @@ async function main() {
 
   const cheapest = dedupeCheapestByKey(
     rows,
-    r => `${r.instance}-${r.region}-${r.os}`
+    r => `${r.instance}-${r.region}-${r.os}` // <-- fixed &gt;
   );
 
   // Quick category counts (nice for logs)
