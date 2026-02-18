@@ -27,17 +27,19 @@ const {
 } = require("../lib/gcp");
 
 // Output & env
-const OUT      = path.join("data", "gcp", "gcp.prices.json");
+// UPDATED: honor OUTPUT_PATH, default to docs/data (no data/... usage)
+const OUT      = process.env.OUTPUT_PATH || path.join("docs", "data", "gcp", "gcp.prices.json");
+// UPDATED: region is now fully workflow-driven (falls back to us-east1 if not provided)
 const REGION   = process.env.GCP_REGION   || "us-east1";
 const CURRENCY = process.env.GCP_CURRENCY || "USD";
 const API_KEY  = process.env.GCP_PRICE_API_KEY;   // Catalog API (public)
 const PROJECT  = process.env.GCP_PROJECT_ID;      // for Compute API fallback
 
-// (Optional) fail fast if region ever drifts
-if (REGION !== "us-east1") {
-  console.error(`[GCP] FATAL: REGION must be 'us-east1' but is '${REGION}'.`);
-  process.exit(2);
-}
+// REMOVED: hard-coded region guard (workflow controls region now)
+// if (REGION !== "us-east1") {
+//   console.error(`[GCP] FATAL: REGION must be 'us-east1' but is '${REGION}'.`);
+//   process.exit(2);
+// }
 
 // Catalog: list SKUs (paged) — prefer OAuth (Bearer) from OIDC; fall back to API key
 async function listSkus(serviceId, pageToken = "") {
