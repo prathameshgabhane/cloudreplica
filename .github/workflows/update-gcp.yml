@@ -70,40 +70,36 @@ jobs:
           echo "Region: ${GCP_REGION}"
           echo "Currency: ${GCP_CURRENCY}"
 
-          # 1) API key presence (optional—OAuth preferred)
           if [[ -z "${GCP_PRICE_API_KEY:-}" ]]; then
             echo "Catalog: API key not set (OK; using OAuth/Bearer)."
           else
-            echo "Catalog: API key is set ✓ (will only be used if OAuth token missing)."
+            echo "Catalog: API key is set ✓"
           fi
 
-          # 2) Project ID presence (needed for Compute fallback/shape listing)
           if [[ -z "${GCP_PROJECT_ID:-}" ]]; then
-            echo "::error::GCP_PROJECT_ID is empty (fallback composition will be skipped)."
+            echo "::error::GCP_PROJECT_ID is empty"
             exit 1
           fi
           echo "Fallback: Project ID is set ✓ -> ${GCP_PROJECT_ID}"
 
-          # 3) OIDC token presence (needed for Compute fallback and OAuth to Catalog)
           if [[ -z "${OIDC_TOKEN:-}" ]]; then
-            echo "::error::OIDC access token not found; google-github-actions/auth did not output access_token."
+            echo "::error::OIDC access token not found."
             exit 1
           fi
           echo "Fallback: OIDC access token is present ✓"
 
-          # 4) Live probe: zones.list with the same REST path used by the Node script
           ZONES_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${OIDC_TOKEN}" \
             "https://compute.googleapis.com/compute/v1/projects/${GCP_PROJECT_ID}/zones")
           echo "Compute API probe status: ${ZONES_STATUS}"
           if [[ "${ZONES_STATUS}" != "200" ]]; then
-            echo "::error::Compute API probe failed (HTTP ${ZONES_STATUS}). Ensure Compute Engine API is enabled and the service account has roles/compute.viewer."
+            echo "::error::Compute API probe failed (HTTP ${ZONES_STATUS})."
             exit 1
           fi
           echo "Compute API probe OK ✓ (zones.list)"
 
-          # Ensure output dir exists
-          mkdir -p data/gcp
+          # UPDATED output dir
+          mkdir -p docs/data/gcp
 
       # (Optional) Quick peek at the Catalog API via OAuth
       - name: Probe Catalog API (OAuth, first 10)
@@ -118,69 +114,61 @@ jobs:
           CODE=$(curl -s -o /tmp/skus.json -w "%{http_code}" -H "Authorization: Bearer ${OIDC_TOKEN}" "$URL")
           echo "Catalog probe HTTP: ${CODE}"
           if [[ "${CODE}" != "200" ]]; then
-            echo "::warning::Catalog OAuth probe failed (HTTP ${CODE}). Continuing because fetch.js will handle errors."
+            echo "::warning::Catalog OAuth probe failed."
             cat /tmp/skus.json || true
           else
-            echo "Top 10 descriptions from Catalog:"
+            echo "Top 10 descriptions:"
             jq -r '.skus[0:10][]?.description' /tmp/skus.json || true
           fi
 
-      # >>> Run your GCP fetcher (writes to data/gcp/gcp.prices.json)
+      # >>> Run fetcher (UPDATED OUTPUT_PATH)
       - name: Fetch GCP prices (FULL mode)
         run: node scripts/providers/gcp.fetch.js
         env:
-          # Public Catalog key (optional; OAuth preferred)
           GCP_PRICE_API_KEY: ${{ secrets.GCP_PRICE_API_KEY }}
-
-          # Region / currency / project
           GCP_REGION: "us-east1"
           GCP_CURRENCY: "USD"
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-
-          # OAuth token for fallback composition and optional OAuth to Catalog
           GCLOUD_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          OUTPUT_PATH: "docs/data/gcp/gcp.prices.json"
 
-          # One-time fallback (keep commented unless needed)
-          # GCP_FORCE_COMPOSE: "1"
-
-      # Validate the output exists and shows basic stats
+      # Validate output (UPDATED PATH)
       - name: Validate output
         shell: bash
         run: |
           set -euo pipefail
-          test -s data/gcp/gcp.prices.json
+          test -s docs/data/gcp/gcp.prices.json
           echo "Output size (bytes):"
-          wc -c data/gcp/gcp.prices.json
+          wc -c docs/data/gcp/gcp.prices.json
           echo "Top-level keys:"
-          jq 'keys' data/gcp/gcp.prices.json | sed 's/^/  /' || true
+          jq 'keys' docs/data/gcp/gcp.prices.json | sed 's/^/  /' || true
           echo "Compute array length:"
-          jq '.compute | length' data/gcp/gcp.prices.json || true
+          jq '.compute | length' docs/data/gcp/gcp.prices.json || true
 
-      # Quick coverage summary so you can see Memory/Compute/General counts
+      # Summaries (UPDATED PATH)
       - name: Summarize family coverage
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           echo "Counts by category:"
-          jq -r '.compute | group_by(.category) | map({cat: .[0].category, count: length})' data/gcp/gcp.prices.json
+          jq -r '.compute | group_by(.category) | map({cat: .[0].category, count: length})' docs/data/gcp/gcp.prices.json
           echo "Counts by category × series:"
-          jq -r '.compute | group_by(.category, .series) | map({cat: .[0].category, series: .[0].series, count: length})' data/gcp/gcp.prices.json
+          jq -r '.compute | group_by(.category, .series) | map({cat: .[0].category, series: .[0].series, count: length})' docs/data/gcp/gcp.prices.json
           echo "Counts by category × vCPU:"
-          jq -r '.compute | group_by(.category, .vcpu) | map({cat: .[0].category, vcpu: .[0].vcpu, count: length})' data/gcp/gcp.prices.json
+          jq -r '.compute | group_by(.category, .vcpu) | map({cat: .[0].category, vcpu: .[0].vcpu, count: length})' docs/data/gcp/gcp.prices.json
 
-      # Publish as artifact for orchestrator (normal mode)
+      # Upload artifact (UPDATED PATH)
       - name: Upload GCP pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: gcp-prices
-          path: data/gcp/gcp.prices.json
+          path: docs/data/gcp/gcp.prices.json
           if-no-files-found: error
           retention-days: 7
 
       # =========================================
-      # OPTIONAL DEBUG MODE — publish & commit directly to docs/data
-      # Toggle via repository variable: DEBUG_PUBLISH=true
+      # OPTIONAL DEBUG MODE — no logic changed
       # =========================================
       - name: Debug Publish to docs/data (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -189,7 +177,7 @@ jobs:
           set -euo pipefail
           echo "DEBUG MODE ENABLED: Publishing GCP output directly to docs/data/gcp"
           mkdir -p docs/data/gcp
-          cp -f data/gcp/gcp.prices.json docs/data/gcp/gcp.prices.json
+          cp -f docs/data/gcp/gcp.prices.json docs/data/gcp/gcp.prices.json
 
       - name: Commit debug provider files (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
