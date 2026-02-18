@@ -21,8 +21,8 @@ const GCP_SERIES_ALLOW = {
   memory:  ["M1", "M2", "M3", "M4"]
 };
 
+// IMPORTANT: Do NOT map STANDARD here. We decide STANDARD by series.
 const CLASS_TO_CATEGORY = {
-  STANDARD: "general",
   HIGHCPU:  "compute",
   HIGHMEM:  "memory",
   ULTRAMEM: "memory",
@@ -145,7 +145,12 @@ function classifyGcpInstance(instance) {
   if (!m) return null;
   const series = m[1];
   const cls = m[2];
-  if (CLASS_TO_CATEGORY[cls]) return CLASS_TO_CATEGORY[cls];
+
+  // Precedence ONLY for non-standard classes
+  if (cls === "HIGHCPU") return "compute";
+  if (cls === "HIGHMEM" || cls === "ULTRAMEM" || cls === "MEGAMEM") return "memory";
+
+  // STANDARD → decide by series (C→compute, M→memory, E/N/T→general)
   if (GCP_SERIES_ALLOW.compute.includes(series)) return "compute";
   if (GCP_SERIES_ALLOW.memory.includes(series))  return "memory";
   if (GCP_SERIES_ALLOW.general.includes(series)) return "general";
