@@ -135,8 +135,17 @@ async function fetchGcpPrices() {
   }
 
   // 3) Fallback: compose Linux prices using CPU/RAM unit rates + machineTypes.list
-  const haveLinux = Object.values(gcp_price_list).some(v => v.os === "Linux");
-  if (!haveLinux || FORCE_COMPOSE) {
+  // Run the composer if Memory is missing or FORCE_COMPOSE=1
+  const entries = Object.values(gcp_price_list);
+  const haveLinuxMemory = entries.some(v => {
+    if (v.os !== "Linux") return false;
+    const tok = v.machine_type.replace(/-/g, "_").toUpperCase();
+    return classifyGcpInstance(tok) === "memory";
+  });
+
+  const NEED_COMPOSE = FORCE_COMPOSE || !haveLinuxMemory;
+
+  if (NEED_COMPOSE) {
     if (!PROJECT) {
       console.warn("[GCP] Fallback needed but GCP_PROJECT_ID not set; skipping composition.");
     } else {
@@ -152,7 +161,7 @@ async function fetchGcpPrices() {
       for (const z of zones) {
         const mts = await listZoneMachineTypes(PROJECT, z, token);
         for (const mt of mts) {
-          const name = String(mt.name).toLowerCase(); // e.g., n2-standard-4
+          const name = String(mt.name).toLowerCase(); // e.g., m2-ultramem-208, n2-highmem-8
           if (!mtMap.has(name)) {
             const vcpu   = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
@@ -165,8 +174,9 @@ async function fetchGcpPrices() {
         const instTok = mt.replace(/-/g, "_").toUpperCase();
         const fam = classifyGcpInstance(instTok);
         if (!fam) continue;
+        if (fam !== "memory") continue; // compose only Memory rows we’re missing
 
-        // series = token before first dash (e.g., 'n2')
+        // series = token before first dash (e.g., 'm2' or 'n2')
         const series = mt.split("-")[0];
         const rates  = linuxSeriesRates[series];
         if (!rates || !rates.core || !rates.ram) continue;
@@ -250,6 +260,10 @@ async function main() {
     rows,
     r => `${r.instance}-${r.region}-${r.os}`
   );
+
+  // Quick category counts (nice for logs)
+  const counts = cheapest.reduce((acc, r) => (acc[r.category] = (acc[r.category] || 0) + 1, acc), {});
+  console.log("[GCP] category-counts:", counts, "region:", REGION);
 
   console.log(`[GCP] collected=${rows.length}, cheapest=${cheapest.length}`);
   if (warnAndSkipWriteOnEmpty("GCP", cheapest)) return;
