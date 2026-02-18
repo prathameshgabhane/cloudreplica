@@ -98,16 +98,24 @@ function isPerInstanceSku(sku, machineType) {
   return hasInstanceNoun && includesType;
 }
 
+/**
+ * Parse Catalog SKUs into { series: { core, ram } } map (Linux unit rates).
+ * IMPORTANT: Do NOT require "instance|vm" — M-series unit SKUs often omit those words.
+ */
 function parseSeriesUnitRate(sku) {
   const name = (sku.description || sku.displayName || "").toLowerCase();
   if (/windows.*license|license.*windows/i.test(name)) return null;
+
+  // Match series + signal words for unit pricing
   const m = name.match(
-    /\b(m1|m2|m3|m4|n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(instance|vm)\b.*\b(core|vcpu|ram|memory|ultramem|megamem)\b/i
+    /\b(m1|m2|m3|m4|n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(core|vcpu|ram|memory|ultramem|megamem)\b/i
   );
   if (!m) return null;
+
   const series = m[1].toLowerCase();
-  const kindRaw = m[3].toLowerCase();
+  const kindRaw = m[2].toLowerCase();
   const kind = /(ram|memory|ultramem|megamem)/.test(kindRaw) ? "ram" : "core";
+
   const price = extractHourlyPrice(sku.pricingInfo);
   if (!(price > 0)) return null;
   return { series, kind, price };
@@ -149,15 +157,13 @@ function getGcpAllowedPrefixes(category) {
 }
 
 /* FULL-mode helpers (Compute API via OIDC) */
-
 async function getAccessTokenFromADC() {
   const token =
     process.env.GCLOUD_ACCESS_TOKEN ||
     process.env.GOOGLE_OAUTH_ACCESS_TOKEN || "";
   if (!token) {
     throw new Error(
-      "[GCP] No access token found in env. " +
-      "Ensure your workflow passes steps.auth.outputs.access_token to GCLOUD_ACCESS_TOKEN."
+      "[GCP] No access token found in env. Ensure your workflow passes steps.auth.outputs.access_token to GCLOUD_ACCESS_TOKEN."
     );
   }
   return token;
