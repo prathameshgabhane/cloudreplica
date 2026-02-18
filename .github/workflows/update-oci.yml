@@ -1,6 +1,11 @@
 name: Fetch OCI Prices
 
 on:
+  workflow_call:
+    outputs:
+      run_id:
+        description: "Run ID of this reusable workflow execution"
+        value: ${{ github.run_id }}
   workflow_dispatch:
   schedule:
     - cron: "35 2 * * *"  # daily at 02:35 UTC
@@ -66,7 +71,7 @@ jobs:
           # Keep existing behavior: publish main file to docs/data/oci
           cp -f data/oci/oci.prices.json docs/data/oci/oci.prices.json
 
-          # NEW: also write a snapshot to a safe _debug path (avoids copy-to-self when paths change)
+          # Also write a snapshot to a safe _debug path (avoids copy-to-self when paths change)
           cp -f docs/data/oci/oci.prices.json docs/data/oci/_debug/oci.prices.json
 
           # Commit only the main file (unchanged behavior)
