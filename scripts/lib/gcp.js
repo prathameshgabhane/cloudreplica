@@ -17,8 +17,10 @@ const CE_SERVICE_ID = "6F81-5844-456A";
 
 const GCP_SERIES_ALLOW = {
   general: ["E2", "N1", "N2", "N2D", "N4", "N4A", "N4D", "T2A", "T2D"],
-  compute: ["C2", "C2D", "C3", "C3D", "C4", "C4D", "C4A", "H3", "H4D"],
-  memory:  ["M1", "M2", "M3", "M4"]
+  // Add H4 (in addition to H3/H4D) for forward compatibility
+  compute: ["C2", "C2D", "C3", "C3D", "C4", "C4D", "C4A", "H3", "H4", "H4D"],
+  // Add X4 (bare-metal memory-optimized)
+  memory:  ["M1", "M2", "M3", "M4", "X4"]
 };
 
 // IMPORTANT: Do NOT map STANDARD here. We decide STANDARD by series.
@@ -47,7 +49,8 @@ function inferMachineType(sku) {
     return mt;
   }
   const s = String(sku?.description || sku?.displayName || "").toLowerCase();
-  const re = /\b(m1|m2|m3|m4|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)\b/;
+  // Expanded to include x4, h3, h4, h4d
+  const re = /\b(m1|m2|m3|m4|x4|h4d|h4|h3|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)\b/;
   const m = s.match(re);
   if (!m) return null;
   return `${m[1]}-${m[2]}-${m[3]}`; // predefined only
@@ -66,13 +69,14 @@ function extractHourlyPrice(pricingInfo) {
 function deriveVcpuRamFromType(mt) {
   if (!mt) return { vcpu: undefined, ram: undefined };
   if (/^custom-/.test(mt)) return { vcpu: undefined, ram: undefined }; // exclude custom
-  const m = mt.match(/^(m1|m2|m3|m4|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)$/i);
+  // Expanded to include x4, h3, h4, h4d
+  const m = mt.match(/^(m1|m2|m3|m4|x4|h4d|h4|h3|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)$/i);
   if (!m) return { vcpu: undefined, ram: undefined };
   const series = m[1].toLowerCase();
   const cls = m[2].toLowerCase();
   const vcpu = Number(m[3]);
   if (!vcpu) return { vcpu: undefined, ram: undefined };
-  if (series.startsWith("m")) return { vcpu, ram: undefined }; // do not guess for M
+  if (series.startsWith("m") || series.startsWith("x")) return { vcpu, ram: undefined }; // do not guess for M/X
   if (cls.startsWith("standard")) return { vcpu, ram: vcpu * 4 };
   if (cls.startsWith("highmem"))  return { vcpu, ram: vcpu * 8 };
   if (cls.startsWith("highcpu"))  return { vcpu, ram: series.startsWith("n1") ? vcpu * 0.9 : vcpu * 1.0 };
@@ -106,9 +110,9 @@ function parseSeriesUnitRate(sku) {
   const name = (sku.description || sku.displayName || "").toLowerCase();
   if (/windows.*license|license.*windows/i.test(name)) return null;
 
-  // Match series + signal words for unit pricing
+  // Expanded series list with x4, h3, h4, h4d
   const m = name.match(
-    /\b(m1|m2|m3|m4|n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(core|vcpu|ram|memory|ultramem|megamem)\b/i
+    /\b(m1|m2|m3|m4|x4|h4d|h4|h3|n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(core|vcpu|ram|memory|ultramem|megamem)\b/i
   );
   if (!m) return null;
 
@@ -150,7 +154,7 @@ function classifyGcpInstance(instance) {
   if (cls === "HIGHCPU") return "compute";
   if (cls === "HIGHMEM" || cls === "ULTRAMEM" || cls === "MEGAMEM") return "memory";
 
-  // STANDARD → decide by series (C→compute, M→memory, E/N/T→general)
+  // STANDARD → decide by series (C→compute, M/X→memory, E/N/T→general)
   if (GCP_SERIES_ALLOW.compute.includes(series)) return "compute";
   if (GCP_SERIES_ALLOW.memory.includes(series))  return "memory";
   if (GCP_SERIES_ALLOW.general.includes(series)) return "general";
