@@ -51,44 +51,41 @@ jobs:
             jq 'keys' /tmp/aws-price.json | head -n 20 || true
           fi
 
-      # Ephemeral workspace path (NOT committed to repo)
+      # Output directory (NEW: docs/data/aws)
       - name: Ensure output directory
-        run: mkdir -p data/aws
+        run: mkdir -p docs/data/aws
 
-      # >>> Run your AWS fetcher (writes to data/aws/aws.prices.json)
+      # >>> Run your AWS fetcher (still writes to old default unless OUTPUT_PATH is provided)
       - name: Fetch AWS prices
         run: node scripts/providers/aws.fetch.js
         env:
           AWS_REGION: "us-east-1"
-          # If your script supports more env flags, add them here:
-          # AWS_CURRENCY: "USD"
-          # AWS_FORCE_COMPOSE: "1"
+          OUTPUT_PATH: "docs/data/aws/aws.prices.json"
 
       # Validate the output was created and is non-empty
       - name: Validate AWS output
         shell: bash
         run: |
           set -euo pipefail
-          test -s data/aws/aws.prices.json
+          test -s docs/data/aws/aws.prices.json
           echo "Output size (bytes):"
-          wc -c data/aws/aws.prices.json
+          wc -c docs/data/aws/aws.prices.json
           echo "Top-level keys:"
-          jq 'keys' data/aws/aws.prices.json | sed 's/^/  /' || true
+          jq 'keys' docs/data/aws/aws.prices.json | sed 's/^/  /' || true
           echo "Compute array length:"
-          jq '.compute | length' data/aws/aws.prices.json || true
+          jq '.compute | length' docs/data/aws/aws.prices.json || true
 
-      # Upload artifact for orchestrator (normal mode)
+      # Upload artifact for orchestrator
       - name: Upload AWS pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: aws-prices
-          path: data/aws/aws.prices.json
+          path: docs/data/aws/aws.prices.json
           if-no-files-found: error
           retention-days: 7
 
       # =========================================
       # OPTIONAL DEBUG MODE — publish & commit directly to docs/data
-      # Toggle via repository variable: DEBUG_PUBLISH=true
       # =========================================
       - name: Debug Publish to docs/data (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -97,7 +94,7 @@ jobs:
           set -euo pipefail
           echo "DEBUG MODE ENABLED: Publishing AWS output directly to docs/data/aws"
           mkdir -p docs/data/aws
-          cp -f data/aws/aws.prices.json docs/data/aws/aws.prices.json
+          cp -f docs/data/aws/aws.prices.json docs/data/aws/aws.prices.json
 
       - name: Commit debug provider files (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
