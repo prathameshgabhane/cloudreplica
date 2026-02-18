@@ -140,6 +140,37 @@ function buildSeriesUnitRateMaps(allSkus, region) {
   return maps;
 }
 
+/**
+ * Find the Windows Server on‑demand license rate PER vCPU for the given region
+ * by scanning the Cloud Billing Catalog SKUs you already fetched.
+ * Returns a Number (USD per vCPU‑hour) or null if not found.
+ */
+function buildWindowsCoreRate(allSkus, region) {
+  let winCore = null;
+
+  for (const sku of allSkus) {
+    const cat = sku.category || {};
+    if (cat.resourceFamily !== "Compute") continue;
+    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
+    if (!regionMatches(sku.serviceRegions, region)) continue;
+
+    const name = (sku.description || sku.displayName || "").toLowerCase();
+
+    // Heuristics: look for Windows license/core SKUs (not RAM/disk/GPU/Spot/etc.)
+    if (!/windows/.test(name)) continue;
+    if (!/(license|licensing|core|vcpu)/.test(name)) continue;
+    if (/(ram|memory|gpu|sole\s*tenan|local ssd|persistent disk|commitment|spot|preemptible|sles|rhel|sql)/i.test(name)) continue;
+
+    const price = extractHourlyPrice(sku.pricingInfo);
+    if (price && price > 0) {
+      winCore = price;
+      break;
+    }
+  }
+
+  return winCore;
+}
+
 function classifyGcpInstance(instance) {
   if (!instance) return null;
   const raw = String(instance);
@@ -237,5 +268,6 @@ module.exports = {
   getAccessTokenFromADC,
   listRegionZones,
   listZoneMachineTypes,
-  buildSeriesUnitRateMaps
+  buildSeriesUnitRateMaps,
+  buildWindowsCoreRate
 };
