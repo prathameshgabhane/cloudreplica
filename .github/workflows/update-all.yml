@@ -2,6 +2,7 @@ name: Update All Cloud Prices
 
 permissions:
   contents: write
+  actions: read     # <-- allow reading artifacts from other runs (child reusable workflows)
 
 on:
   workflow_dispatch: {}
@@ -40,10 +41,11 @@ jobs:
 
   # 4) Aggregate (produce FLAT docs/data/prices.json)
   aggregate:
-    needs: gcp
+    needs: [azure, aws, gcp]   # <-- we need outputs from all three provider jobs
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read            # <-- ensure this job can read artifacts from child runs
 
     steps:
       - name: Checkout repo
@@ -64,24 +66,27 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      # --- Download artifacts from provider jobs ---
+      # --- Download artifacts from provider jobs (use child run-ids) ---
       - name: Download Azure artifact
         uses: actions/download-artifact@v4
         with:
           name: azure-prices
           path: _artifacts/azure
+          run-id: ${{ needs.azure.outputs.run_id }}
 
       - name: Download AWS artifact
         uses: actions/download-artifact@v4
         with:
           name: aws-prices
           path: _artifacts/aws
+          run-id: ${{ needs.aws.outputs.run_id }}
 
       - name: Download GCP artifact
         uses: actions/download-artifact@v4
         with:
           name: gcp-prices
           path: _artifacts/gcp
+          run-id: ${{ needs.gcp.outputs.run_id }}
 
       - name: List downloaded artifacts
         run: |
