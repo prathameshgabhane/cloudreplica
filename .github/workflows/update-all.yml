@@ -51,6 +51,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Align to latest main BEFORE generating files
+      - name: Align working tree to origin/main
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+
       - name: Ensure jq is available
         run: |
           if ! command -v jq >/dev/null 2>&1; then
@@ -153,7 +159,7 @@ jobs:
             exit 1
           }
 
-      # --- buildInfo.json (freshness only) ---
+      # --- buildInfo.json (freshness only; forces a diff every run) ---
       - name: Write buildInfo.json
         shell: bash
         run: |
@@ -182,27 +188,13 @@ jobs:
             ]
           ' docs/data/prices.json || true
 
-      # --- Detect changes and commit ---
-      - name: Detect changes
-        id: git_status
-        run: |
-          if git diff --quiet -- docs/data; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
+      # --- Commit (ALWAYS; buildInfo timestamp guarantees a diff) ---
       - name: Commit merged cloud prices
-        if: steps.git_status.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
 
           git add -f docs/data/azure/azure.prices.json
           git add -f docs/data/aws/aws.prices.json
@@ -210,10 +202,6 @@ jobs:
           git add -f docs/data/prices.json
           git add -f docs/data/buildInfo.json
 
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Auto-update ALL cloud prices"
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          git commit -m "Auto-update ALL cloud prices (${TS})" || echo "Nothing to commit (unexpected)"
           git push
