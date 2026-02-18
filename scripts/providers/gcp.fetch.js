@@ -135,15 +135,28 @@ async function fetchGcpPrices() {
   }
 
   // 3) Fallback: compose Linux prices using CPU/RAM unit rates + machineTypes.list
-  // Run the composer if Memory is missing or FORCE_COMPOSE=1
-  const entries = Object.values(gcp_price_list);
+  // Determine which Linux families are missing from the per-instance pass.
+  const entries = Object.values(gcp_price_list).filter(v => v.os === "Linux");
+  const haveLinuxGeneral = entries.some(v => {
+    const tok = v.machine_type.replace(/-/g, "_").toUpperCase();
+    return classifyGcpInstance(tok) === "general";
+  });
+  const haveLinuxCompute = entries.some(v => {
+    const tok = v.machine_type.replace(/-/g, "_").toUpperCase();
+    return classifyGcpInstance(tok) === "compute";
+  });
   const haveLinuxMemory = entries.some(v => {
-    if (v.os !== "Linux") return false;
     const tok = v.machine_type.replace(/-/g, "_").toUpperCase();
     return classifyGcpInstance(tok) === "memory";
   });
 
-  const NEED_COMPOSE = FORCE_COMPOSE || !haveLinuxMemory;
+  // If per-instance produced nothing, compose ALL families.
+  // Else compose only the families that are missing.
+  const composeGeneral = FORCE_COMPOSE || (entries.length === 0 ? true : !haveLinuxGeneral);
+  const composeCompute = FORCE_COMPOSE || (entries.length === 0 ? true : !haveLinuxCompute);
+  const composeMemory  = FORCE_COMPOSE || (entries.length === 0 ? true : !haveLinuxMemory);
+
+  const NEED_COMPOSE = composeGeneral || composeCompute || composeMemory;
 
   if (NEED_COMPOSE) {
     if (!PROJECT) {
@@ -161,7 +174,7 @@ async function fetchGcpPrices() {
       for (const z of zones) {
         const mts = await listZoneMachineTypes(PROJECT, z, token);
         for (const mt of mts) {
-          const name = String(mt.name).toLowerCase(); // e.g., m2-ultramem-208, n2-highmem-8
+          const name = String(mt.name).toLowerCase(); // e.g., n2-standard-4, m2-ultramem-208
           if (!mtMap.has(name)) {
             const vcpu   = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
@@ -174,9 +187,11 @@ async function fetchGcpPrices() {
         const instTok = mt.replace(/-/g, "_").toUpperCase();
         const fam = classifyGcpInstance(instTok);
         if (!fam) continue;
-        if (fam !== "memory") continue; // compose only Memory rows we’re missing
+        if (fam === "general" && !composeGeneral) continue;
+        if (fam === "compute" && !composeCompute) continue;
+        if (fam === "memory"  && !composeMemory)  continue;
 
-        // series = token before first dash (e.g., 'm2' or 'n2')
+        // series = token before first dash (e.g., 'n2', 'c3d', 'm2')
         const series = mt.split("-")[0];
         const rates  = linuxSeriesRates[series];
         if (!rates || !rates.core || !rates.ram) continue;
