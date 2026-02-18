@@ -168,7 +168,7 @@ jobs:
           retention-days: 7
 
       # =========================================
-      # OPTIONAL DEBUG MODE — no logic changed
+      # OPTIONAL DEBUG MODE — updated to avoid copy-to-self
       # =========================================
       - name: Debug Publish to docs/data (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -176,8 +176,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "DEBUG MODE ENABLED: Publishing GCP output directly to docs/data/gcp"
-          mkdir -p docs/data/gcp
-          cp -f docs/data/gcp/gcp.prices.json docs/data/gcp/gcp.prices.json
+          # Main file already exists at docs/data/gcp; create a safe debug snapshot
+          mkdir -p docs/data/gcp/_debug
+          cp -f docs/data/gcp/gcp.prices.json docs/data/gcp/_debug/gcp.prices.json
 
       - name: Commit debug provider files (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
