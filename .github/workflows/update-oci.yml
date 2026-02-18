@@ -58,8 +58,18 @@ jobs:
       - name: Publish (debug)
         if: ${{ always() }}
         run: |
+          set -euo pipefail
+          # Ensure target folders
           mkdir -p docs/data/oci
+          mkdir -p docs/data/oci/_debug
+
+          # Keep existing behavior: publish main file to docs/data/oci
           cp -f data/oci/oci.prices.json docs/data/oci/oci.prices.json
+
+          # NEW: also write a snapshot to a safe _debug path (avoids copy-to-self when paths change)
+          cp -f docs/data/oci/oci.prices.json docs/data/oci/_debug/oci.prices.json
+
+          # Commit only the main file (unchanged behavior)
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
