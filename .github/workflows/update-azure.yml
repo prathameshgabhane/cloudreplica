@@ -76,46 +76,43 @@ jobs:
             echo "Probe OK - sample keys:" && jq 'keys' /tmp/arm.json | head -n 20 || true
           fi
 
-      # Ephemeral workspace path (NOT committed to repo)
+      # Output directory (UPDATED)
       - name: Ensure output directory
-        run: mkdir -p data/azure
+        run: mkdir -p docs/data/azure
 
-      # >>> Run your Azure fetcher (writes to data/azure/azure.prices.json)
+      # >>> Run your Azure fetcher (UPDATED OUTPUT_PATH)
       - name: Fetch Azure prices
         run: node scripts/providers/azure.fetch.js
         env:
           ARM_TOKEN: ${{ env.ARM_TOKEN }}
-          AZURE_REGION: "eastus"            # change if you want a different default
+          AZURE_REGION: "eastus"
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          # Optional envs your script may support:
-          # AZURE_CURRENCY: "USD"
-          # AZURE_FORCE_COMPOSE: "1"
+          OUTPUT_PATH: "docs/data/azure/azure.prices.json"
 
-      # Validate the output was created and is non-empty
+      # Validate output (UPDATED path)
       - name: Validate Azure output
         shell: bash
         run: |
           set -euo pipefail
-          test -s data/azure/azure.prices.json
+          test -s docs/data/azure/azure.prices.json
           echo "Output size (bytes):"
-          wc -c data/azure/azure.prices.json
+          wc -c docs/data/azure/azure.prices.json
           echo "Top-level keys:"
-          jq 'keys' data/azure/azure.prices.json | sed 's/^/  /' || true
+          jq 'keys' docs/data/azure/azure.prices.json | sed 's/^/  /' || true
           echo "Compute array length:"
-          jq '.compute | length' data/azure/azure.prices.json || true
+          jq '.compute | length' docs/data/azure/azure.prices.json || true
 
-      # Upload artifact for orchestrator (normal mode)
+      # Upload artifact (UPDATED path)
       - name: Upload Azure pricing JSON (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: azure-prices
-          path: data/azure/azure.prices.json
+          path: docs/data/azure/azure.prices.json
           if-no-files-found: error
           retention-days: 7
 
       # =========================================
-      # OPTIONAL DEBUG MODE — publish & commit directly to docs/data
-      # Toggle via repository variable: DEBUG_PUBLISH=true
+      # OPTIONAL DEBUG MODE — DO NOT TOUCH LOGIC
       # =========================================
       - name: Debug Publish to docs/data (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -124,7 +121,7 @@ jobs:
           set -euo pipefail
           echo "DEBUG MODE ENABLED: Publishing Azure output directly to docs/data/azure"
           mkdir -p docs/data/azure
-          cp -f data/azure/azure.prices.json docs/data/azure/azure.prices.json
+          cp -f docs/data/azure/azure.prices.json docs/data/azure/azure.prices.json
 
       - name: Commit debug provider files (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -134,7 +131,6 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Align with remote to avoid rebase prompts
           git fetch origin main
           git checkout main
           git reset --hard origin/main
