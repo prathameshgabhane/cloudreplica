@@ -4,7 +4,11 @@ permissions:
   contents: read          # provider does not commit; orchestrator will
 
 on:
-  workflow_call: {}
+  workflow_call:
+    outputs:
+      run_id:
+        description: "Run ID of this reusable workflow execution"
+        value: ${{ github.run_id }}
   workflow_dispatch: {}
 
 concurrency:
