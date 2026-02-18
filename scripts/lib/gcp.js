@@ -3,43 +3,59 @@
 
 /**
  * Compute Engine service id for Catalog API (public SKUs).
- * Example from docs: services/6F81-5844-456A
+ * Example: services/6F81-5844-456A
  */
 const CE_SERVICE_ID = "6F81-5844-456A";
+
+/* ============================================================
+ * Apples-to-apples family policy across clouds
+ * ------------------------------------------------------------
+ *  GENERAL  ↔ AWS(M/T), Azure(D)     → GCP: E/N/T series (STANDARD only)
+ *  COMPUTE  ↔ AWS(C),    Azure(F)    → GCP: C-series + any *-HIGHCPU-*
+ *  MEMORY   ↔ AWS(R),    Azure(E)    → GCP: M-series + any *-HIGHMEM-*
+ * ============================================================ */
+
+const GCP_SERIES_ALLOW = {
+  general: ["E2", "N1", "N2", "N2D", "N4", "N4A", "N4D", "T2A", "T2D"],
+  compute: ["C2", "C2D", "C3", "C3D", "C4", "C4D", "C4A", "H3", "H4D"],
+  memory:  ["M1", "M2", "M3", "M4"]
+};
+
+const CLASS_TO_CATEGORY = {
+  STANDARD: "general",
+  HIGHCPU:  "compute",
+  HIGHMEM:  "memory",
+  ULTRAMEM: "memory",
+  MEGAMEM:  "memory"
+};
+
+const GCP_EXAMPLE_INSTANCES = {
+  general: ["e2-standard-2", "n2-standard-4", "t2a-standard-4", "n4-standard-4"],
+  compute: ["c2-standard-4", "c3-standard-4", "c4-standard-4", "n2-highcpu-4", "e2-highcpu-8"],
+  memory:  ["m1-ultramem-40", "m2-ultramem-208", "m3-megamem-64", "n2-highmem-8", "e2-highmem-4"]
+};
 
 /* ---------------------------
  * Classification & parsing
  * --------------------------- */
 
-function classifyGcpInstance(instance) {
-  const name = String(instance).toUpperCase();
-
-  // Memory Optimized
-  if (name.startsWith("M1") || name.startsWith("M2") || name.startsWith("M3") || name.startsWith("M4"))
-    return "memory";
-
-  // Compute Optimized
-  if (name.startsWith("C2") || name.startsWith("C2D") || name.startsWith("H3") || name.startsWith("H4D"))
-    return "compute";
-
-  // General Purpose
-  const generalFamilies = [
-    "C3","C3D","C4","C4D","C4A",
-    "N1","N2","N2D","N4","N4A","N4D",
-    "T2A","T2D","E2"
-  ];
-  if (generalFamilies.some(f => name.startsWith(f))) return "general";
-
-  return null;
+function inferMachineType(sku) {
+  const attrs = sku?.attributes || {};
+  if (attrs.machineType) {
+    const mt = String(attrs.machineType).toLowerCase();
+    if (/^custom-/.test(mt)) return null; // exclude custom
+    return mt;
+  }
+  const s = String(sku?.description || sku?.displayName || "").toLowerCase();
+  const re = /\b(m1|m2|m3|m4|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)\b/;
+  const m = s.match(re);
+  if (!m) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`; // predefined only
 }
 
-/**
- * Extract hourly price from Catalog pricingInfo.tieredRates[].unitPrice
- */
 function extractHourlyPrice(pricingInfo) {
-  for (const p of pricingInfo || []) {
-    const expr = p?.pricingExpression;
-    const unit = expr?.tieredRates?.[0]?.unitPrice;
+  for (const p of (pricingInfo || [])) {
+    const unit = p?.pricingExpression?.tieredRates?.[0]?.unitPrice;
     if (!unit) continue;
     const price = Number(unit.units || 0) + Number(unit.nanos || 0) / 1e9;
     if (price > 0) return price;
@@ -47,109 +63,97 @@ function extractHourlyPrice(pricingInfo) {
   return null;
 }
 
-/**
- * Infer machine type token (e.g., "n2-standard-4") from attributes or description.
- */
-function inferMachineType(sku) {
-  const attrs = sku?.attributes || {};
-  if (attrs.machineType) return String(attrs.machineType).toLowerCase();
-
-  // NOTE: prefer 'description', fall back to 'displayName'
-  const s = String(sku?.description || sku?.displayName || "").toLowerCase();
-  const m = s.match(
-    /\b([a-z0-9]+-(?:standard|highmem|highcpu|ultramem|megamem|c2d|c3|c4|c3d|c4d|c4a|n1|n2|n2d|n4|t2a|t2d|e2)-\d+)\b/
-  );
-  return m ? m[1] : null;
-}
-
-/**
- * Conservative vCPU/RAM derivation for predefined families when attributes missing.
- */
 function deriveVcpuRamFromType(mt) {
   if (!mt) return { vcpu: undefined, ram: undefined };
-  const m = mt.match(/^([a-z0-9]+)-([a-z]+[a-z0-9]*)-(\d+)$/);
+  if (/^custom-/.test(mt)) return { vcpu: undefined, ram: undefined }; // exclude custom
+  const m = mt.match(/^(m1|m2|m3|m4|c2d|c2|c3d|c3|c4d|c4a|c4|n4d|n4a|n4|n2d|n2|n1|e2|t2a|t2d)-(standard|highmem|highcpu|ultramem|megamem)-(\d+)$/i);
   if (!m) return { vcpu: undefined, ram: undefined };
-  const series = m[1];
-  const cls    = m[2];
-  const vcpu   = Number(m[3]);
+  const series = m[1].toLowerCase();
+  const cls = m[2].toLowerCase();
+  const vcpu = Number(m[3]);
   if (!vcpu) return { vcpu: undefined, ram: undefined };
-
-  if (series.startsWith("n1")) {
-    if (cls.startsWith("standard")) return { vcpu, ram: vcpu * 3.75 };
-    if (cls.startsWith("highmem"))  return { vcpu, ram: vcpu * 6.5  };
-    if (cls.startsWith("highcpu"))  return { vcpu, ram: vcpu * 0.9  };
-  }
-  if (
-    series.startsWith("n2")  || series.startsWith("n2d") ||
-    series.startsWith("e2")  || series.startsWith("t2a") ||
-    series.startsWith("t2d") || series.startsWith("n4")  ||
-    series.startsWith("c3")  || series.startsWith("c4")
-  ) {
-    if (cls.startsWith("standard")) return { vcpu, ram: vcpu * 4 };
-    if (cls.startsWith("highmem"))  return { vcpu, ram: vcpu * 8 };
-    if (cls.startsWith("highcpu"))  return { vcpu, ram: vcpu * 2 };
-  }
-  if (series.startsWith("c2")) return { vcpu, ram: vcpu * 4 };
-
-  return { vcpu: undefined, ram: undefined };
+  if (series.startsWith("m")) return { vcpu, ram: undefined }; // do not guess for M
+  if (cls.startsWith("standard")) return { vcpu, ram: vcpu * 4 };
+  if (cls.startsWith("highmem"))  return { vcpu, ram: vcpu * 8 };
+  if (cls.startsWith("highcpu"))  return { vcpu, ram: series.startsWith("n1") ? vcpu * 0.9 : vcpu * 1.0 };
+  return { vcpu, ram: undefined };
 }
 
-/**
- * Region matching for Catalog SKUs: exact, 'global', and optional 'us' super‑region.
- */
 function regionMatches(serviceRegions, region) {
   const want = String(region || "").toLowerCase();
-  const set  = new Set((serviceRegions || []).map(r => String(r).toLowerCase()));
+  const set = new Set((serviceRegions || []).map(r => String(r).toLowerCase()));
   if (set.has(want)) return true;
   if (set.has("global")) return true;
   if (want.startsWith("us-") && set.has("us")) return true;
   return false;
 }
 
-/**
- * Identify real per‑instance SKUs and exclude unit SKUs (Core/vCPU/Ram/Memory)
- * and Sole‑Tenancy surcharges.
- * Accept both "Instance" and "VM" (newer SKUs often use "VM" and omit "running").
- */
 function isPerInstanceSku(sku, machineType) {
   const name = String(sku?.description || sku?.displayName || "");
   if (!machineType) return false;
-
-  // Exclude unit SKUs and sole-tenant surcharges
-  if (/\b(Core|vCPU|Ram|Memory|Sole\s*Tenancy|Sole\s*Tenant)\b/i.test(name)) return false;
-
-  // Accept "Instance" or "VM" (no need to require the verb "running")
+  if (/^custom-/.test(machineType)) return false; // exclude custom
+  if (/\b(Core|vCPU|Ram|Memory|Sole\s*Tenancy|Sole\s*Tenant)\b/i.test(name)) return false; // unit or ST
   const hasInstanceNoun = /\b(Instance|VM)\b/i.test(name);
-  const includesType    = name.toLowerCase().includes(String(machineType).toLowerCase());
+  const includesType = name.toLowerCase().includes(String(machineType).toLowerCase());
   return hasInstanceNoun && includesType;
 }
 
-/* ---------------------------
- * Category → GCP family allow‑list (for recommendations)
- * --------------------------- */
-const gcpFamilyAllowList = {
-  general: [ "t2d", "n2d", "e2", "n2", "n4" ],
-  compute: [ "c3d", "c3", "c2", "c4" ],
-  memory:  [ "m4", "m3", "m2", "m1" ]
-};
-function getGcpAllowedPrefixes(category) {
-  return (gcpFamilyAllowList[category] || []).map(s => s.toUpperCase());
+function parseSeriesUnitRate(sku) {
+  const name = (sku.description || sku.displayName || "").toLowerCase();
+  if (/windows.*license|license.*windows/i.test(name)) return null;
+  const m = name.match(
+    /\b(m1|m2|m3|m4|n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(instance|vm)\b.*\b(core|vcpu|ram|memory|ultramem|megamem)\b/i
+  );
+  if (!m) return null;
+  const series = m[1].toLowerCase();
+  const kindRaw = m[3].toLowerCase();
+  const kind = /(ram|memory|ultramem|megamem)/.test(kindRaw) ? "ram" : "core";
+  const price = extractHourlyPrice(sku.pricingInfo);
+  if (!(price > 0)) return null;
+  return { series, kind, price };
 }
 
-/* ---------------------------
- * FULL‑mode helpers (Compute API via OIDC)
- * No SDKs — read short‑lived token from env (GCLOUD_ACCESS_TOKEN)
- * --------------------------- */
+function buildSeriesUnitRateMaps(allSkus, region) {
+  const maps = {};
+  for (const sku of allSkus) {
+    const cat = sku.category || {};
+    if (cat.resourceFamily !== "Compute") continue;
+    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
+    if (!regionMatches(sku.serviceRegions, region)) continue;
+    const info = parseSeriesUnitRate(sku);
+    if (!info) continue;
+    if (!maps[info.series]) maps[info.series] = {};
+    maps[info.series][info.kind] = info.price;
+  }
+  return maps;
+}
 
-/**
- * Get short‑lived access token issued by the OIDC workflow step.
- * Ensure your workflow exports it as GCLOUD_ACCESS_TOKEN.
- */
+function classifyGcpInstance(instance) {
+  if (!instance) return null;
+  const raw = String(instance);
+  if (/^custom-/i.test(raw)) return null; // exclude custom
+  const tok = raw.toUpperCase().replace(/-/g, "_");
+  const m = tok.match(/^([A-Z0-9]+)_(STANDARD|HIGHCPU|HIGHMEM|ULTRAMEM|MEGAMEM)_(\d+)$/);
+  if (!m) return null;
+  const series = m[1];
+  const cls = m[2];
+  if (CLASS_TO_CATEGORY[cls]) return CLASS_TO_CATEGORY[cls];
+  if (GCP_SERIES_ALLOW.compute.includes(series)) return "compute";
+  if (GCP_SERIES_ALLOW.memory.includes(series))  return "memory";
+  if (GCP_SERIES_ALLOW.general.includes(series)) return "general";
+  return null;
+}
+
+function getGcpAllowedPrefixes(category) {
+  return (GCP_SERIES_ALLOW[category] || []).map(s => s.toUpperCase());
+}
+
+/* FULL-mode helpers (Compute API via OIDC) */
+
 async function getAccessTokenFromADC() {
   const token =
     process.env.GCLOUD_ACCESS_TOKEN ||
-    process.env.GOOGLE_OAUTH_ACCESS_TOKEN || // optional fallback
-    "";
+    process.env.GOOGLE_OAUTH_ACCESS_TOKEN || "";
   if (!token) {
     throw new Error(
       "[GCP] No access token found in env. " +
@@ -159,7 +163,6 @@ async function getAccessTokenFromADC() {
   return token;
 }
 
-// List project zones, filtered to the chosen region prefix (e.g., "us-east1-")
 async function listRegionZones(projectId, region, accessToken) {
   const url = `https://compute.googleapis.com/compute/v1/projects/${projectId}/zones`;
   const zones = [];
@@ -173,7 +176,8 @@ async function listRegionZones(projectId, region, accessToken) {
     }
     const j = await r.json();
     for (const z of j.items || []) {
-      if (String(z.name).toLowerCase().startsWith(`${region.toLowerCase()}-`)) zones.push(z.name);
+      const name = String(z.name || "").toLowerCase();
+      if (name.startsWith(`${region.toLowerCase()}-`)) zones.push(z.name);
     }
     if (!j.nextPageToken) break;
     pageToken = j.nextPageToken;
@@ -181,7 +185,6 @@ async function listRegionZones(projectId, region, accessToken) {
   return zones;
 }
 
-// List machineTypes for a zone; exclude custom; keep name/guestCpus/memoryMb
 async function listZoneMachineTypes(projectId, zone, accessToken) {
   const url = `https://compute.googleapis.com/compute/v1/projects/${projectId}/zones/${zone}/machineTypes`;
   const mts = [];
@@ -196,7 +199,7 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
     const j = await r.json();
     for (const mt of j.items || []) {
       const name = String(mt.name || "");
-      if (/^custom-/.test(name)) continue;
+      if (/^custom-/i.test(name)) continue; // exclude custom
       if (!/^[a-z0-9]+-[a-z]+[a-z0-9]*-\d+$/i.test(name)) continue; // predefined shapes only
       mts.push({ name, guestCpus: mt.guestCpus, memoryMb: mt.memoryMb });
     }
@@ -204,47 +207,6 @@ async function listZoneMachineTypes(projectId, zone, accessToken) {
     pageToken = j.nextPageToken;
   }
   return mts;
-}
-
-/**
- * Parse Catalog SKUs into a { series: { core, ram } } map for Linux.
- * Accept both "Instance" and "VM", and "core/vCPU" + "ram/memory" wording.
- */
-function parseSeriesUnitRate(sku) {
-  const name = (sku.description || sku.displayName || "").toLowerCase();
-  // Exclude Windows license-like SKUs
-  if (/windows.*license|license.*windows/i.test(name)) return null;
-
-  const m = name.match(
-    /\b(n1|n2d|n2|n4|e2|t2a|t2d|c2d|c3d|c3|c4d|c4|c4a|c2)\b.*\b(instance|vm)\b.*\b(core|vcpu|ram|memory)\b/i
-  );
-  if (!m) return null;
-
-  const series = m[1].toLowerCase();
-  const kindRaw = m[3].toLowerCase();
-  const kind = /ram|memory/.test(kindRaw) ? "ram" : "core";
-
-  const price = extractHourlyPrice(sku.pricingInfo);
-  if (!(price > 0)) return null;
-
-  return { series, kind, price };
-}
-
-function buildSeriesUnitRateMaps(allSkus, region) {
-  const maps = {}; // { series: { core, ram } }
-  for (const sku of allSkus) {
-    const cat = sku.category || {};
-    if (cat.resourceFamily !== "Compute") continue;
-    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
-    if (!regionMatches(sku.serviceRegions, region)) continue;
-
-    const info = parseSeriesUnitRate(sku);
-    if (!info) continue;
-
-    if (!maps[info.series]) maps[info.series] = {};
-    maps[info.series][info.kind] = info.price;
-  }
-  return maps;
 }
 
 module.exports = {
@@ -256,7 +218,7 @@ module.exports = {
   regionMatches,
   isPerInstanceSku,
   getGcpAllowedPrefixes,
-  // FULL-mode exports
+  GCP_EXAMPLE_INSTANCES,
   getAccessTokenFromADC,
   listRegionZones,
   listZoneMachineTypes,
