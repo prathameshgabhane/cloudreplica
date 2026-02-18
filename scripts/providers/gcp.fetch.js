@@ -97,7 +97,7 @@ async function fetchGcpPrices() {
     if (!regionMatches(sku.serviceRegions, REGION)) continue;
 
     const mt = inferMachineType(sku);
-    if (!mt) continue;
+    if (!mt) continue;                   // includes exclusion of custom
     if (!isPerInstanceSku(sku, mt)) continue;
 
     const instTok = mt.replace(/-/g, "_").toUpperCase();
@@ -126,7 +126,8 @@ async function fetchGcpPrices() {
       os,
       price_per_hour: price,
       vcpu,
-      memory_gb: ram
+      memory_gb: ram,
+      __src: "catalog"
     };
   }
 
@@ -151,7 +152,7 @@ async function fetchGcpPrices() {
         for (const mt of mts) {
           const name = String(mt.name).toLowerCase(); // e.g., n2-standard-4
           if (!mtMap.has(name)) {
-            const vcpu  = Number(mt.guestCpus || 0);
+            const vcpu   = Number(mt.guestCpus || 0);
             const ramGiB = Number(mt.memoryMb || 0) / 1024;
             if (vcpu > 0 && ramGiB > 0) mtMap.set(name, { vcpu, ramGiB });
           }
@@ -178,7 +179,8 @@ async function fetchGcpPrices() {
           os: "Linux",
           price_per_hour: price,
           vcpu: hw.vcpu,
-          memory_gb: hw.ramGiB
+          memory_gb: hw.ramGiB,
+          __src: "composed"
         };
       }
     }
@@ -223,6 +225,11 @@ async function main() {
     const ram  = Number(item.memory_gb);
     if (!vcpu || !ram) continue;
 
+    // Enrichments for UI/troubleshooting
+    const series = String(item.machine_type).split("-")[0].toLowerCase(); // e.g., n2, c3d, m2
+    const arch = series === "t2a" ? "arm" : "x86";
+    const source = item.__src || "catalog";
+
     rows.push({
       instance,
       category,
@@ -230,7 +237,10 @@ async function main() {
       ram,
       pricePerHourUSD: price,
       region: REGION,
-      os
+      os,
+      series,
+      arch,
+      source
     });
   }
 
