@@ -1,36 +1,24 @@
 /* =====================================================
-   ROOT VARIABLES (DARK THEME DEFAULT)
+   ROOT VARIABLES – LIGHT MODE ONLY (VODAFONE RED)
 ===================================================== */
 
 :root{
-  --bg: linear-gradient(135deg, #1a0000, #0f0f14 60%);
-  --panel: rgba(20,20,28,0.85);
-  --shadow: 0 10px 40px rgba(193, 18, 31, .25);
+  --bg: #f6f6f6;
+  --panel: #ffffff;
+  --shadow: 0 8px 25px rgba(0,0,0,.08);
 
-  --text: #f5f5f5;
-  --muted: #a1a1aa;
+  --text: #111111;
+  --muted: #666666;
 
-  --primary: #c1121f;
-  --primary-hover: #9b0f19;
+  /* Vodafone Red */
+  --primary: #e60000;
+  --primary-hover: #b80000;
 
-  --total: #ff4d5a;
+  --total: #e60000;
 
   --aws: #ff9900;
   --azure: #0078d4;
   --gcp: #ea4335;
-}
-
-/* =====================================================
-   LIGHT MODE SUPPORT
-   (Add class="light-mode" to <body> to enable)
-===================================================== */
-
-body.light-mode {
-  --bg: #f5f5f5;
-  --panel: #ffffff;
-  --text: #111;
-  --muted: #555;
-  --shadow: 0 8px 25px rgba(0,0,0,.08);
 }
 
 /* =====================================================
@@ -46,23 +34,6 @@ html, body {
   color:var(--text);
   background: var(--bg);
   min-height:100vh;
-  transition: background .4s ease, color .3s ease;
-}
-
-/* Subtle animated background glow */
-body::before {
-  content:"";
-  position:fixed;
-  inset:0;
-  background: radial-gradient(circle at 20% 30%, rgba(255,0,0,.15), transparent 40%),
-              radial-gradient(circle at 80% 70%, rgba(255,0,0,.08), transparent 40%);
-  animation: floatGlow 10s infinite alternate ease-in-out;
-  z-index:-1;
-}
-
-@keyframes floatGlow {
-  from { transform: scale(1); }
-  to   { transform: scale(1.1); }
 }
 
 /* =====================================================
@@ -74,10 +45,8 @@ h2 {
   margin:30px 0 20px;
   font-size:32px;
   font-weight:700;
-  letter-spacing:1px;
-  background: linear-gradient(to right, #ff4d5a, #ffffff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  letter-spacing:0.5px;
+  color: var(--primary);
 }
 
 /* =====================================================
@@ -86,13 +55,12 @@ h2 {
 
 .filters { 
   background: var(--panel);
-  backdrop-filter: blur(14px);
   margin: 0 auto 24px; 
   padding: 22px; 
   max-width: 1100px; 
-  border-radius: 16px; 
+  border-radius: 14px; 
   box-shadow: var(--shadow);
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid #eee;
 }
 
 .filters .row { 
@@ -118,7 +86,7 @@ label,
   align-items:center;
   gap:6px;
   margin-bottom:4px;
-  line-height:1.1;
+  font-size:14px;
 }
 
 /* =====================================================
@@ -127,19 +95,19 @@ label,
 
 select { 
   padding: 8px 12px; 
-  border: 1px solid #2a2a35;
-  border-radius: 10px; 
-  background: #1c1c26;
-  color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px; 
+  background: #ffffff;
+  color: #111;
   min-width: 160px; 
   height: 40px;
-  transition: all .25s ease;
+  transition: all .2s ease;
 }
 
 select:focus {
   border-color: var(--primary);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(193,18,31,.35);
+  box-shadow: 0 0 0 3px rgba(230,0,0,.15);
 }
 
 /* =====================================================
@@ -148,8 +116,8 @@ select:focus {
 
 button { 
   padding: 0 22px; 
-  border-radius: 10px; 
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  border-radius: 8px; 
+  background: var(--primary);
   color: #fff; 
   cursor: pointer; 
   height: 40px;
@@ -158,16 +126,15 @@ button {
   justify-content:center; 
   font-weight:600;
   border:none;
-  transition: all .25s ease;
+  transition: all .2s ease;
 }
 
 button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(255,0,0,.5);
+  background: var(--primary-hover);
 }
 
 button:active {
-  transform: scale(.96);
+  transform: scale(.97);
 }
 
 /* =====================================================
@@ -188,14 +155,16 @@ button:active {
 
 .panel {
   background: var(--panel);
-  backdrop-filter: blur(16px);
   padding: 22px;
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
-  border: 1px solid rgba(255,255,255,0.05);
-  transition: transform .3s ease, box-shadow .3s ease;
-  position: relative;
-  overflow: hidden;
+  border: 1px solid #eee;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.panel:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0,0,0,.12);
 }
 
 /* Brand Accent Borders */
@@ -203,14 +172,8 @@ button:active {
 .panel:nth-child(2) { border-top: 4px solid var(--azure); }
 .panel:nth-child(3) { border-top: 4px solid var(--gcp); }
 
-.panel:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 18px 45px rgba(193,18,31,.35);
-}
-
 /* Cheapest Highlight */
 .panel.cheapest {
-  box-shadow: 0 0 30px rgba(255,0,0,.6);
   border: 2px solid var(--primary);
 }
 
@@ -220,29 +183,18 @@ button:active {
 
 .panel p {
   margin:8px 0;
-  transition: all .3s ease;
-}
-
-/* Animated number effect */
-.price-animate {
-  animation: fadePrice .5s ease;
-}
-
-@keyframes fadePrice {
-  from { opacity:0; transform: translateY(5px); }
-  to   { opacity:1; transform: translateY(0); }
 }
 
 .split {
   display:flex;
   justify-content:space-between;
   align-items:center;
-  font-size: 0.98rem;
+  font-size: 0.95rem;
   margin: 6px 0;
 }
 
 .split .label {
-  color:#cbd5e1;
+  color: var(--muted);
 }
 
 .total .label {
@@ -252,36 +204,7 @@ button:active {
 .total span:last-child {
   font-weight:700;
   color: var(--total);
-  font-size: 1.08rem;
-}
-
-/* =====================================================
-   SHIMMER LOADING EFFECT
-===================================================== */
-
-.loading {
-  position: relative;
-  overflow: hidden;
-}
-
-.loading::after {
-  content:"";
-  position:absolute;
-  top:0;
-  left:-150%;
-  width:50%;
-  height:100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255,255,255,.15),
-    transparent
-  );
-  animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-  100% { left:150%; }
+  font-size: 1.05rem;
 }
 
 /* =====================================================
@@ -290,7 +213,7 @@ button:active {
 
 .divider {
   border:0;
-  border-top:1px solid rgba(255,255,255,0.08);
+  border-top:1px solid #eee;
   margin:14px 0;
 }
 
@@ -316,24 +239,24 @@ button:active {
 }
 
 .info-badge:hover {
-  background: rgba(193,18,31,.15);
+  background: rgba(230,0,0,.1);
 }
 
 .info-pop {
   position: absolute;
   margin-top: 6px;
   z-index: 1000;
-  min-width: 280px;
-  max-width: 360px;
+  min-width: 260px;
+  max-width: 340px;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: #1c1c26;
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(0,0,0,.4);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111;
+  box-shadow: 0 8px 20px rgba(0,0,0,.15);
   font-size: 14px;
   line-height: 1.4;
   display: none;
-  border:1px solid rgba(255,255,255,0.08);
+  border:1px solid #eee;
 }
 
 .info-pop[aria-hidden="false"] {
@@ -346,8 +269,10 @@ button:active {
   left: 12px;
   width: 12px;
   height: 12px;
-  background: #1c1c26;
+  background: #ffffff;
   transform: rotate(45deg);
+  border-left:1px solid #eee;
+  border-top:1px solid #eee;
 }
 
 /* =====================================================
@@ -357,8 +282,7 @@ button:active {
 @media (max-width: 520px) {
   select { min-width: 130px; }
 
-  .info-pop {
-    left: 0 !important;
-    right: auto !important;
+  .filters {
+    padding:18px;
   }
 }
