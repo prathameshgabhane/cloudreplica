@@ -93,8 +93,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "DEBUG MODE ENABLED: Publishing AWS output directly to docs/data/aws"
-          mkdir -p docs/data/aws
-          cp -f docs/data/aws/aws.prices.json docs/data/aws/aws.prices.json
+          # Main output is already in docs/data/aws; create a safe debug snapshot to avoid copy-to-self
+          mkdir -p docs/data/aws/_debug
+          cp -f docs/data/aws/aws.prices.json docs/data/aws/_debug/aws.prices.json
 
       - name: Commit debug provider files (optional)
         if: ${{ vars.DEBUG_PUBLISH == 'true' }}
@@ -109,6 +110,7 @@ jobs:
           git checkout main
           git reset --hard origin/main
 
+          # Commit the main path (unchanged behavior)
           git add -f docs/data/aws/aws.prices.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
