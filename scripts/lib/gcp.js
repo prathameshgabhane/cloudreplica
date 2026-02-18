@@ -144,31 +144,66 @@ function buildSeriesUnitRateMaps(allSkus, region) {
  * Find the Windows Server on‑demand license rate PER vCPU for the given region
  * by scanning the Cloud Billing Catalog SKUs you already fetched.
  * Returns a Number (USD per vCPU‑hour) or null if not found.
+ *
+ * Strategy:
+ *  - Pass 1 (strict): require windows + (license|licensing|core|vcpu), exclude obvious non-candidates.
+ *  - Pass 2 (relaxed): accept "paid/on‑demand/windows server" phrasing like the Console UI if strict finds nothing.
+ *  - If multiple, pick the lowest positive price defensively.
+ *  - If GCP_DEBUG_WIN=1, print a sample of candidates for diagnostics.
  */
 function buildWindowsCoreRate(allSkus, region) {
-  let winCore = null;
-
-  for (const sku of allSkus) {
+  const inRegion = (sku) => {
     const cat = sku.category || {};
-    if (cat.resourceFamily !== "Compute") continue;
-    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
-    if (!regionMatches(sku.serviceRegions, region)) continue;
+    if (cat.resourceFamily !== "Compute") return false;
+    if (cat.usageType && !/OnDemand/i.test(cat.usageType)) return false;
+    return regionMatches(sku.serviceRegions, region);
+  };
 
+  // Exclusions that are never the Windows Server license core SKU
+  const BAD = /(ram|memory|gpu|sole\s*tenan|local ssd|persistent disk|commitment|spot|preemptible|sles|rhel|sql)/i;
+
+  const candidates = [];
+
+  // Pass 1: strict
+  for (const sku of allSkus) {
+    if (!inRegion(sku)) continue;
     const name = (sku.description || sku.displayName || "").toLowerCase();
-
-    // Heuristics: look for Windows license/core SKUs (not RAM/disk/GPU/Spot/etc.)
     if (!/windows/.test(name)) continue;
     if (!/(license|licensing|core|vcpu)/.test(name)) continue;
-    if (/(ram|memory|gpu|sole\s*tenan|local ssd|persistent disk|commitment|spot|preemptible|sles|rhel|sql)/i.test(name)) continue;
+    if (BAD.test(name)) continue;
 
     const price = extractHourlyPrice(sku.pricingInfo);
-    if (price && price > 0) {
-      winCore = price;
-      break;
+    if (price && price > 0) candidates.push({ price, name, sku });
+  }
+
+  // Pass 2: relaxed
+  if (candidates.length === 0) {
+    for (const sku of allSkus) {
+      if (!inRegion(sku)) continue;
+      const name = (sku.description || sku.displayName || "").toLowerCase();
+      if (!/windows/.test(name)) continue;
+      if (BAD.test(name)) continue;
+
+      // Phrases commonly seen in UI / catalog variants
+      if (!/(paid|on-?demand|windows\s*server)/.test(name)) continue;
+
+      const price = extractHourlyPrice(sku.pricingInfo);
+      if (price && price > 0) candidates.push({ price, name, sku });
     }
   }
 
-  return winCore;
+  if (process.env.GCP_DEBUG_WIN === "1") {
+    const sample = candidates
+      .slice(0, 10)
+      .map(c => ({ price: c.price, name: c.name }))
+      .sort((a, b) => a.price - b.price);
+    console.log("[GCP][WIN] candidate SKUs (sample):", JSON.stringify(sample, null, 2));
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => a.price - b.price);
+  return candidates[0].price;
 }
 
 function classifyGcpInstance(instance) {
