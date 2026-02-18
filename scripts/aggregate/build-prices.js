@@ -12,9 +12,9 @@ const path = require("path");
 
 // ---------- Paths ----------
 const BASE = path.resolve(__dirname, "..", "..");
-const AWS_FILE    = path.join(BASE, "data", "aws",   "aws.prices.json");
-const AZURE_FILE  = path.join(BASE, "data", "azure", "azure.prices.json");
-const GCP_FILE    = path.join(BASE, "data", "gcp",   "gcp.prices.json");
+const AWS_FILE   = path.join(BASE, "data", "aws",   "aws.prices.json");
+const AZURE_FILE = path.join(BASE, "data", "azure", "azure.prices.json");
+const GCP_FILE   = path.join(BASE, "data", "gcp",   "gcp.prices.json");
 
 // --out <file> (optional) → defaults to data/prices.json
 const ARG_OUT_IDX = process.argv.indexOf("--out");
@@ -109,8 +109,8 @@ function summarize(label, obj) {
   // Flat arrays
   const flat = {
     meta,
-    aws:   asComputeArray(aws),
     azure: asComputeArray(azure),
+    aws:   asComputeArray(aws),
     gcp:   asComputeArray(gcp),
     generatedAt: new Date().toISOString()
   };
