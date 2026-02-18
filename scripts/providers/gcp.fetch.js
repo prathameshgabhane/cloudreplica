@@ -33,6 +33,12 @@ const CURRENCY = process.env.GCP_CURRENCY || "USD";
 const API_KEY  = process.env.GCP_PRICE_API_KEY;   // Catalog API (public)
 const PROJECT  = process.env.GCP_PROJECT_ID;      // for Compute API fallback
 
+// (Optional) fail fast if region ever drifts
+if (REGION !== "us-east1") {
+  console.error(`[GCP] FATAL: REGION must be 'us-east1' but is '${REGION}'.`);
+  process.exit(2);
+}
+
 // Catalog: list SKUs (paged) — prefer OAuth (Bearer) from OIDC; fall back to API key
 async function listSkus(serviceId, pageToken = "") {
   const base =
@@ -48,7 +54,6 @@ async function listSkus(serviceId, pageToken = "") {
   const headers = bearer ? { Authorization: `Bearer ${bearer}` } : {};
   const finalUrl = bearer ? url : `${url}&key=${API_KEY}`;
 
-  // Trace which auth path we used for visibility
   console.log(`[GCP] Catalog auth: ${bearer ? "OAuth(Bearer)" : "API key"}`);
 
   const r = await fetch(finalUrl, { headers });
@@ -62,7 +67,6 @@ async function listSkus(serviceId, pageToken = "") {
 async function fetchGcpPrices() {
   logStart("[GCP] Fetching PAYG pricing via Catalog API (with FULL-mode fallback)…");
 
-  // If neither OAuth token nor API key is present, we can't call Catalog.
   if (!process.env.GCLOUD_ACCESS_TOKEN && !process.env.GCP_PRICE_API_KEY) {
     throw new Error("[GCP] No Catalog credentials found (need GCLOUD_ACCESS_TOKEN or GCP_PRICE_API_KEY).");
   }
@@ -93,7 +97,6 @@ async function fetchGcpPrices() {
     const cat = sku.category || {};
     if (cat.resourceFamily !== "Compute") continue;
     if (cat.usageType && !/OnDemand/i.test(cat.usageType)) continue;
-
     if (!regionMatches(sku.serviceRegions, REGION)) continue;
 
     const mt = inferMachineType(sku);
@@ -137,7 +140,6 @@ async function fetchGcpPrices() {
     if (!PROJECT) {
       console.warn("[GCP] Fallback needed but GCP_PROJECT_ID not set; skipping composition.");
     } else {
-      // Ensure we have a short-lived access token from the workflow OIDC step
       const token = await getAccessTokenFromADC(); // reads GCLOUD_ACCESS_TOKEN env
       if (!token) throw new Error("[GCP] Missing OIDC access token in env (GCLOUD_ACCESS_TOKEN).");
 
